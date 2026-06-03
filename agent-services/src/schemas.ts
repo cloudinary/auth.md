@@ -23,10 +23,31 @@ export const agentAuthBody = z.union([
   anonymousBody,
 ]);
 
-export const claimBody = z.object({
+/**
+ * Two shapes for POST /agent/identity/claim, discriminated on `type`:
+ *  - `login_hint`: agent provides a login_hint for the user who's
+ *    claiming. Starts a user_code ceremony (the user signs in at the
+ *    service and types a code the agent surfaces).
+ *  - `identity_assertion`: agent provides an ID-JAG. Completes the claim
+ *    atomically — useful when the agent acquired an ID-JAG after starting
+ *    anonymous and wants to short-circuit the browser ceremony.
+ */
+const loginHintClaimBody = z.object({
+  type: z.literal("login_hint"),
   claim_token: z.string().min(1),
-  email: z.email(),
+  login_hint: z.string().min(1),
 });
+
+const idJagClaimBody = z.object({
+  type: z.literal("identity_assertion"),
+  claim_token: z.string().min(1),
+  assertion: z.string().min(1),
+});
+
+export const claimBody = z.discriminatedUnion("type", [
+  loginHintClaimBody,
+  idJagClaimBody,
+]);
 
 /** Mock IdP sign-in form. */
 export const loginFormBody = z.object({

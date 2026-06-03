@@ -527,6 +527,12 @@ export function findRegistrationByClaimViewHash(
 export function recordClaimAttempt(
   registration: Registration,
   login_hint: LoginHint,
+  /**
+   * Optional ID-JAG triple to bind on completion. Set when the ceremony
+   * was triggered by an ID-JAG step-up at /claim — completeClaim then
+   * upserts the (iss, sub) delegation alongside the user binding.
+   */
+  idJag?: { iss: string; sub: string; aud: string },
 ): {
   claimViewTokenPlaintext: string;
   userCode: string;
@@ -549,6 +555,7 @@ export function recordClaimAttempt(
     user_code_expires_at: code.expiresAt,
     login_hint,
   };
+  if (idJag) registration.id_jag = idJag;
   return {
     claimViewTokenPlaintext: plaintext,
     userCode: code.plaintext,
@@ -634,10 +641,13 @@ export function completeClaim(
     }
   }
 
-  if (registration.kind === "id_jag" && registration.id_jag) {
+  if (registration.id_jag) {
     /*
-     * Step-up complete: bind the (iss, sub) → user delegation so future
-     * ID-JAGs from this provider for this sub take the clean-match path.
+     * If an ID-JAG triple is recorded (set on id_jag-kind step-up
+     * registrations, or anonymous registrations whose ceremony was
+     * initiated by an ID-JAG step-up at /claim), bind the (iss, sub) →
+     * user delegation so future ID-JAGs from this provider for this sub
+     * take the clean-match path.
      */
     upsertDelegation(
       registration.id_jag.iss,
@@ -647,4 +657,53 @@ export function completeClaim(
   }
 
   return { ok: true, registration, user: signedInUser };
+}
+
+export type IdJagClaimResult =
+  | { ok: true; registration: Registration; user: User }
+  | {
+      ok: false;
+      error: "previously_claimed" | "claim_expired" | "wrong_kind";
+    };
+
+/**
+ * Complete an anonymous claim atomically by binding it to a verified ID-JAG
+ * instead of running the user_code ceremony. The agent presented an ID-JAG
+ * (verified upstream); we record the (iss, sub, aud) on the registration
+ * and bind the delegation. Pre-claim access_tokens are revoked, same as
+ * the user_code path. Returns the updated registration so the caller can
+ * mint a v2 identity_assertion.
+ *
+ * Restricted to anonymous registrations — email-verification regs are
+ * already mid-ceremony with their own asserted email; mixing in a
+ * different ID-JAG identity there isn't meaningful.
+ */
+export function completeAnonymousClaimViaIdJag(
+  registration: Registration,
+  idJag: { iss: string; sub: string; aud: string },
+  user: User,
+): IdJagClaimResult {
+  if (registration.kind !== "anonymous") {
+    return { ok: false, error: "wrong_kind" };
+  }
+  if (registration.status === "claimed") {
+    return { ok: false, error: "previously_claimed" };
+  }
+  if (registration.status === "expired") {
+    return { ok: false, error: "claim_expired" };
+  }
+
+  registration.user_id = user.id;
+  registration.claimed_at = new Date();
+  registration.id_jag = idJag;
+  upsertDelegation(idJag.iss, idJag.sub, user.id);
+
+  /* Revoke pre-claim access_tokens — same as the user_code path. */
+  for (const cred of credentials.values()) {
+    if (cred.registration_id === registration.id && !cred.revoked) {
+      cred.revoked = true;
+    }
+  }
+
+  return { ok: true, registration, user };
 }

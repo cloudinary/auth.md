@@ -473,16 +473,22 @@ The `verification_uri` routes through `/login` first so the user authenticates b
 
 Anonymous-only. Verified-email registrations skip this — their `claim` block is bundled into the `/agent/identity` registration response.
 
-Request:
+Two shapes, discriminated on `type`:
+
+- `type: "login_hint"` — start a user_code ceremony (default path; covered below).
+- `type: "identity_assertion"` — agent acquired an ID-JAG and wants to skip the ceremony; see [Claim via ID-JAG](#claim-via-id-jag) below.
+
+login_hint shape:
 
 ```json
 {
+  "type": "login_hint",
   "claim_token": "clm_abc123...",
-  "email": "user@example.com"
+  "login_hint": "user@example.com"
 }
 ```
 
-The `email` binds the registration to the human the agent is acting for. Only that signed-in user can complete the ceremony — without this binding, a third party who intercepts the `user_code` could claim the agent on their own account.
+The `login_hint` binds the registration to the human the agent is acting for. Only that signed-in user can complete the ceremony — without this binding, a third party who intercepts the `user_code` could claim the agent on their own account.
 
 Response (200):
 
@@ -517,6 +523,38 @@ The user opens `verification_uri`, signs in to the service, and lands on a page 
 4. On the form post, the service verifies the `user_code` against the registration's stored hash and marks the claim complete. Same-account check applies again on submit.
 
 This is a service-owned UX surface — agents never see it.
+
+#### Claim via ID-JAG
+
+If the agent started anonymous and later acquired an ID-JAG for the user (e.g., the user signed in through the agent's provider mid-run), it can claim the pending registration atomically without dragging the user through the user_code ceremony. Same `/agent/identity/claim` endpoint, different `type`:
+
+```json
+{
+  "type": "identity_assertion",
+  "claim_token": "clm_abc123...",
+  "assertion": "<ID-JAG JWT>"
+}
+```
+
+Implementation:
+
+1. Hash the `claim_token` and look up the registration. Reject if not found, expired, or already claimed; reject if `kind !== "anonymous"` with `claimed_or_in_flight`.
+2. Verify the ID-JAG the same way `/agent/identity` does — signature, audience, replay, `auth_time` freshness. `auth_time_*` errors become `401 login_required` so the agent knows to refresh upstream (same as the `/agent/identity` path).
+3. Run the matcher. If `kind === "step_up_required"` (ID-JAG matches an existing user, no `(iss, sub)` delegation yet), refuse with `401 interaction_required` pointing to `/agent/identity` — the user has to walk the normal step-up ceremony there to confirm linking the provider identity, after which a retry here clean-matches.
+4. On clean-match: bind the anonymous registration to the resolved user (`user_id`, `claimed_at`), record the ID-JAG triple as `id_jag = { iss, sub, aud }`, call `upsertDelegation`, revoke pre-claim access_tokens (same as user_code completion), and return a v2 `identity_assertion`:
+
+```json
+{
+  "registration_id": "reg_...",
+  "status": "claimed",
+  "identity_assertion": "<service-signed JWT>",
+  "assertion_expires": "2026-05-04T13:00:00.000Z"
+}
+```
+
+The agent exchanges the v2 assertion at `/oauth2/token` (jwt-bearer) for a post-claim access_token. Same shape as the user_code ceremony's terminal state — the only difference is no polling.
+
+**Why anonymous-only.** Email-verification registrations have already asserted an email and started a ceremony for that email. Replacing that with a different ID-JAG identity is ambiguous (which identity wins?) and not worth the complexity — agents that started email-verification but later got an ID-JAG can just re-register at `/agent/identity` with the ID-JAG directly.
 
 #### POST /oauth2/token (claim grant) — Agent poll
 
