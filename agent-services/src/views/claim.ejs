@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title><%= title %></title>
+<style>
+  :root {
+    --brand-primary: #6D6DF2;
+    --brand-text: #030527;
+    --brand-bg: #FFFFFF;
+    --error: #e55039;
+    --muted: rgba(3, 5, 39, .65);
+    --border: rgba(3, 5, 39, .12);
+    --surface-soft: rgba(3, 5, 39, .04);
+    --warn-bg: rgba(245, 158, 11, .08);
+    --warn-border: rgba(245, 158, 11, .35);
+    --warn-text: #8a5a00;
+  }
+  body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1.5rem; line-height: 1.5; color: var(--brand-text); background: var(--brand-bg); }
+  h1 { color: <%= variant === "error" ? "var(--error)" : "var(--brand-primary)" %>; }
+  p { color: var(--muted); }
+  code { background: var(--surface-soft); padding: .05rem .3rem; border-radius: .2rem; font-size: .9em; }
+  form { margin-top: 1.5rem; display: flex; flex-direction: column; gap: .75rem; }
+  label { font-size: .85rem; font-weight: 600; color: var(--brand-text); }
+  input { width: 100%; padding: .65rem .75rem; border: 1px solid var(--border); border-radius: .35rem; font-size: 1.4rem; letter-spacing: .35rem; font-family: ui-monospace, "SF Mono", Menlo, monospace; text-align: center; background: var(--brand-bg); color: var(--brand-text); }
+  button { padding: .7rem 1rem; background: var(--brand-primary); color: white; border: none; border-radius: .35rem; font-weight: 600; font-size: 1rem; cursor: pointer; }
+  button:hover { filter: brightness(1.08); }
+  .err { color: var(--error); background: rgba(229, 80, 57, .08); border: 1px solid rgba(229, 80, 57, .35); padding: .5rem .75rem; border-radius: .35rem; font-size: .85rem; margin: 0; }
+  .warn { background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text); padding: .6rem .8rem; border-radius: .35rem; font-size: .8rem; margin-top: 1rem; }
+  .advisory { background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text); padding: .65rem .8rem; border-radius: .35rem; font-size: .85rem; margin: .5rem 0; }
+  .advisory + .advisory { margin-top: .4rem; }
+</style>
+</head>
+<body>
+<h1><%= title %></h1>
+
+<% if (variant === "form" || variant === "form-error") { %>
+  <% if (provider) { %>
+    <p>You're signed in as <code><%= userEmail %></code>. <strong><%= provider %></strong> is asking to link this account so an agent running there can act on your behalf. Enter the 6-digit code your agent showed you to confirm.</p>
+  <% } else { %>
+    <p>You're signed in as <code><%= userEmail %></code>. The agent should have shown you a 6-digit code — enter it below to authorize it to act on your behalf.</p>
+  <% } %>
+
+  <% (advisories || []).forEach(function(a) { %>
+    <div class="advisory"><%- a %></div>
+  <% }) %>
+
+  <form method="POST" action="<%= completeUrl %>">
+    <input type="hidden" name="claim_attempt_token" value="<%= claimAttemptToken %>">
+    <label>
+      6-digit code
+      <input type="text" name="user_code" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="000000" required autofocus>
+    </label>
+    <% if (formError) { %>
+      <p class="err"><%= formError %></p>
+    <% } %>
+    <button type="submit">Authorize agent</button>
+  </form>
+  <p class="warn">Only enter a code from an agent you trust. Pasting a code from an untrusted source could let that agent act on your behalf.</p>
+
+<% } else if (variant === "wrong-account") { %>
+  <p>This claim was started for <code><%= claimEmail %></code>. You're signed in as <code><%= userEmail %></code>. Sign out and sign back in with the right account.</p>
+
+<% } else { %>
+  <%# done | error — generic single-paragraph message %>
+  <p><%= message %></p>
+<% } %>
+</body></html>
