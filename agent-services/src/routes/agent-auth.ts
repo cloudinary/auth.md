@@ -297,6 +297,20 @@ agentAuthRouter.post(config.claimEndpointPath, async (req, res) => {
     return;
   }
   if (parsed.value.type === "identity_assertion") {
+    /*
+     * The atomic ID-JAG claim path is anonymous-only. Email-verification
+     * registrations are already bound to a specific email and need that
+     * user to confirm; id_jag step-up registrations are already mid-
+     * ceremony and refresh via the email-shape body.
+     */
+    if (registration.kind !== "anonymous") {
+      res.status(409).json({
+        error: "claimed_or_in_flight",
+        message:
+          "ID-JAG claim is only supported for anonymous registrations. Use the email-shape body to refresh the ceremony.",
+      });
+      return;
+    }
     return handleAnonymousClaimViaIdJag(
       registration,
       parsed.value.assertion,
