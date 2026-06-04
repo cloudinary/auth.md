@@ -2,7 +2,7 @@
 
 ## v0.7.0 (2026-06-12)
 
-Adds a second body shape to `POST /agent/identity/claim` so an agent that started anonymous can bind its registration to a user identity by presenting an ID-JAG — skipping the user_code ceremony when the ID-JAG cleanly matches, falling back to a ceremony only when step-up is required. Keeps `registration_id` and pre-claim continuity intact instead of forcing the agent to re-register.
+Adds a second body shape to `POST /agent/identity/claim` so an agent that started anonymous can bind its registration to a user identity by presenting an ID-JAG — skipping the user_code ceremony when the ID-JAG can be used without further verification, falling back to a ceremony only when confirmation is required. Keeps `registration_id` and pre-claim continuity intact instead of forcing the agent to re-register.
 
 ### Added
 

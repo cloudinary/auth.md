@@ -168,7 +168,7 @@ sequenceDiagram
 
 ### Anonymous Registration Claimed via ID-JAG
 
-If the agent started anonymous and later acquired an ID-JAG (e.g., the user signed in through the agent's provider mid-run), the agent can claim the pending registration by presenting the ID-JAG at `/agent/identity/claim` with `type: identity_assertion`. Two branches:
+If the agent started anonymous, the user wants to claim the registration, and the agent can obtain an ID-JAG, it can bind the registration to that identity by presenting the ID-JAG at `/agent/identity/claim` with `type: identity_assertion`. Two branches:
 
 ```mermaid
 sequenceDiagram
@@ -189,10 +189,10 @@ sequenceDiagram
     Agent->>Service: POST /agent/identity/claim<br/>{ type: identity_assertion, claim_token, assertion: ID-JAG }
     Service->>Service: Verify ID-JAG + auth_time + matcher
 
-    alt Clean match (no email conflict, or existing (iss, sub) delegation)
+    alt No confirmation needed (no email conflict, or existing (iss, sub) delegation)
         Service-->>Agent: 200 OK (status: claimed, identity_assertion v2)
         Note over Agent: Pre-claim access_token revoked.<br/>Agent exchanges v2 at /oauth2/token<br/>via jwt-bearer for a fresh credential.
-    else Step-up required (ID-JAG email matches an existing different user, no delegation)
+    else Confirmation required (ID-JAG email matches an existing different account, no delegation)
         Service-->>Agent: 200 OK (claim_attempt: user_code + verification_uri)
         Agent-->>User: Surface user_code + verification_uri
         User->>Service: GET verification_uri (signs in, lands on /claim)

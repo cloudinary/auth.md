@@ -526,7 +526,7 @@ This is a service-owned UX surface — agents never see it.
 
 #### Claim via ID-JAG
 
-If the agent started anonymous and later acquired an ID-JAG for the user (e.g., the user signed in through the agent's provider mid-run), it can claim the pending registration atomically without dragging the user through the user_code ceremony. Same `/agent/identity/claim` endpoint, different `type`:
+If the agent started anonymous, the user wants to claim the registration, and the agent can obtain an ID-JAG for them, it can bind the registration atomically instead of taking the user through the user_code ceremony. Same `/agent/identity/claim` endpoint, different `type`:
 
 ```json
 {

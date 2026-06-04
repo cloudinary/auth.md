@@ -301,7 +301,7 @@ The `claim_attempt` block here — same shape as the `claim` block in the `servi
 
 ### 4a-alt. Claim via ID-JAG
 
-If you started anonymous but later acquired an ID-JAG for the user (e.g., the user signed in through your provider during the agent's run), you can claim atomically without the user-code ceremony:
+If you started anonymous, the user wants to claim the registration, and you can obtain an ID-JAG for them, you can bind the existing registration to that identity instead of re-registering:
 
 ```http
 POST /agent/identity/claim
@@ -316,7 +316,7 @@ Content-Type: application/json
 
 Two success shapes:
 
-**Clean match (200)** — the ID-JAG cleanly matches an existing `(iss, sub)` delegation, or matches by verified email with no conflicting existing account. The registration is bound atomically, no user confirmation needed:
+**No confirmation needed (200)** — the ID-JAG is accepted on its own (either an existing `(iss, sub)` delegation, or no email conflict with another account). The registration is bound atomically:
 
 ```json
 {
@@ -330,7 +330,7 @@ Two success shapes:
 
 Skip to [Step 5](#step-5--exchange-the-assertion) with the new `identity_assertion`.
 
-**Step-up required (200)** — the ID-JAG's verified email matches an existing different user at the service and no `(iss, sub)` delegation exists yet. The service won't silently bind the delegation; surface the returned ceremony block to the user and poll `/oauth2/token` exactly as in the user-code claim flow ([Step 4b](#4b-hand-off-to-the-user) and [Step 4c](#4c-poll-for-completion)). The user signs in, confirms linking the provider identity to their account, and the next poll resolves to a post-claim access_token plus a v2 `identity_assertion`:
+**Confirmation required (200)** — the ID-JAG's verified email matches an existing different account at the service and no `(iss, sub)` delegation exists yet. The service won't silently bind the delegation; surface the returned ceremony block to the user and poll `/oauth2/token` exactly as in the user-code claim flow ([Step 4b](#4b-hand-off-to-the-user) and [Step 4c](#4c-poll-for-completion)). The user signs in, confirms linking the provider identity to their account, and the next poll resolves to a post-claim access_token plus a v2 `identity_assertion`:
 
 ```json
 {
