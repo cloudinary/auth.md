@@ -406,6 +406,7 @@ async function handleAnonymousClaimViaIdJag(
     );
     res.json({
       registration_id: registration.id,
+      registration_type: "identity_assertion",
       claim_attempt_id: attempt.id,
       status: "initiated",
       expires_at: attempt.view_expires_at.toISOString(),
@@ -449,6 +450,7 @@ async function handleAnonymousClaimViaIdJag(
   );
   res.json({
     registration_id: result.registration.id,
+    registration_type: "identity_assertion",
     status: "claimed",
     identity_assertion: jwt,
     assertion_expires: expiresAt.toISOString(),

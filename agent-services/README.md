@@ -546,6 +546,7 @@ Implementation:
      ```json
      {
        "registration_id": "reg_...",
+       "registration_type": "identity_assertion",
        "status": "claimed",
        "identity_assertion": "<service-signed JWT>",
        "assertion_expires": "2026-05-04T13:00:00.000Z"
@@ -558,6 +559,7 @@ Implementation:
      ```json
      {
        "registration_id": "reg_...",
+       "registration_type": "identity_assertion",
        "claim_attempt_id": "cla_...",
        "status": "initiated",
        "expires_at": "...",

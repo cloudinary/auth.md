@@ -321,6 +321,7 @@ Two success shapes:
 ```json
 {
   "registration_id": "reg_...",
+  "registration_type": "identity_assertion",
   "status": "claimed",
   "identity_assertion": "<service-signed JWT>",
   "assertion_expires": "2026-05-21T18:31:25.994Z"
@@ -334,6 +335,7 @@ Skip to [Step 5](#step-5--exchange-the-assertion) with the new `identity_asserti
 ```json
 {
   "registration_id": "reg_...",
+  "registration_type": "identity_assertion",
   "claim_attempt_id": "cla_...",
   "status": "initiated",
   "expires_at": "...",
