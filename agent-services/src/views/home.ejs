@@ -3,79 +3,9 @@
 <head>
 <meta charset="utf-8">
 <title>Agent Auth Consumer — Interactive Demo</title>
-<style>
-  :root {
-    --brand-primary: #6D6DF2;
-    --brand-primary-hover: #5252D9;
-    --brand-success: #3FF1C7;
-    --brand-success-hover: #2DD8AF;
-    --brand-text: #030527;
-    --brand-bg: #FFFFFF;
-    --track-email: #f6b93b;
-    --track-email-hover: #e0a52e;
-    --error: #e55039;
-    --error-bg: #fde9e6;
-    --muted: rgba(3, 5, 39, .65);
-    --muted-2: rgba(3, 5, 39, .5);
-    --border: rgba(3, 5, 39, .12);
-    --surface-soft: rgba(3, 5, 39, .04);
-    --note-bg: rgba(109, 109, 242, .08);
-    --note-border: rgba(109, 109, 242, .25);
-  }
-  * { box-sizing: border-box; }
-  body { font-family: system-ui, -apple-system, sans-serif; max-width: 100rem; margin: 2rem auto; padding: 0 1.5rem; line-height: 1.5; color: var(--brand-text); background: var(--brand-bg); }
-  .full { max-width: 52rem; margin: 0 auto; }
-  .tracks { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; align-items: start; margin-top: 1rem; }
-  .tracks .track-header { margin: 0 0 .5rem; }
-  .tracks section { margin: 0 0 1rem; }
-  @media (max-width: 80rem) {
-    .tracks { grid-template-columns: 1fr; }
-  }
-  h1 { margin-bottom: .25rem; }
-  h2 { margin-top: 0; font-size: 1.1rem; }
-  h2 .num { display: inline-block; width: 1.6rem; height: 1.6rem; line-height: 1.6rem; text-align: center; background: var(--brand-primary); color: white; border-radius: 50%; font-size: .85rem; margin-right: .5rem; vertical-align: 1px; }
-  .sub { color: var(--muted); margin-top: 0; }
-  .sub a { color: var(--brand-primary); }
-  section { border: 1px solid var(--border); border-radius: .5rem; padding: 1rem 1.25rem; margin: 1rem 0; background: var(--brand-bg); }
-  section[hidden] { display: none; }
-  section.active { border-color: var(--brand-primary); box-shadow: 0 0 0 3px rgba(109, 109, 242, .15); }
-  section.track-anon.active { border-color: var(--brand-success); box-shadow: 0 0 0 3px rgba(63, 241, 199, .2); }
-  section.track-anon h2 .num { background: var(--brand-success); color: var(--brand-text); }
-  section.track-email.active { border-color: var(--track-email); box-shadow: 0 0 0 3px rgba(246, 185, 59, .18); }
-  section.track-email h2 .num { background: var(--track-email); color: var(--brand-text); }
-  button { font-size: .95rem; padding: .4rem .9rem; margin: .25rem .4rem .25rem 0; border-radius: .3rem; border: 1px solid var(--border); background: var(--brand-bg); color: var(--brand-text); cursor: pointer; }
-  button.primary { background: var(--brand-primary); color: white; border-color: var(--brand-primary); }
-  button.primary:hover { background: var(--brand-primary-hover); }
-  .track-anon button.primary { background: var(--brand-success); border-color: var(--brand-success); color: var(--brand-text); }
-  .track-anon button.primary:hover { background: var(--brand-success-hover); }
-  .track-email button.primary { background: var(--track-email); border-color: var(--track-email); color: var(--brand-text); }
-  .track-email button.primary:hover { background: var(--track-email-hover); }
-  button:hover { border-color: var(--brand-primary); }
-  button:disabled { opacity: .5; cursor: not-allowed; }
-  input, select, textarea { font-size: .95rem; padding: .3rem .5rem; border: 1px solid var(--border); border-radius: .3rem; font-family: inherit; color: var(--brand-text); background: var(--brand-bg); }
-  input { width: 100%; max-width: 28rem; }
-  input.otp { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 1.2rem; letter-spacing: .25rem; max-width: 12rem; }
-  textarea { width: 100%; min-height: 5rem; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .78rem; }
-  label { display: block; margin-top: .5rem; font-size: .85rem; color: var(--muted); }
-  label input, label select, label textarea { display: block; margin-top: .2rem; }
-  .label { display: inline-block; font-size: .7rem; text-transform: uppercase; font-weight: 600; color: var(--muted); letter-spacing: .05em; margin: .5rem 0 .25rem; }
-  .req, .res { background: var(--surface-soft); border: 1px solid var(--border); border-radius: .3rem; padding: .6rem .75rem; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .78rem; overflow-x: auto; }
-  .req { border-left: 3px solid var(--brand-primary); }
-  .res { border-left: 3px solid var(--brand-success); }
-  .res.error { border-left-color: var(--error); background: var(--error-bg); }
-  pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
-  code { background: var(--surface-soft); padding: .05rem .3rem; border-radius: .2rem; font-size: .9em; }
-  .reset { float: right; }
-  .badge { display: inline-block; font-size: .7rem; padding: .1rem .4rem; border-radius: .25rem; background: var(--surface-soft); color: var(--muted); font-family: ui-monospace, monospace; margin-left: .3rem; }
-  .done .num { background: var(--brand-success); color: var(--brand-text); }
-  .track-header { margin: 2rem 0 0; font-weight: 600; font-size: .9rem; text-transform: uppercase; letter-spacing: .05em; }
-  .track-header.anon { color: var(--brand-success-hover); }
-  .track-header.email { color: var(--track-email-hover); }
-  .track-header.ia { color: var(--brand-primary); }
-  .note { font-size: .85rem; color: var(--brand-text); background: var(--note-bg); border: 1px solid var(--note-border); padding: .5rem .75rem; border-radius: .3rem; }
-</style>
+<link rel="stylesheet" href="/style.css">
 </head>
-<body>
+<body class="page-home">
 <div class="full">
 <h1>Agent Auth Consumer</h1>
 <p class="sub">Interactive walk-through of three registration flows. Trusted issuer: <code><%= providerHint %></code> — run the <a href="<%= providerHint %>" target="_blank">provider sample</a> in parallel to mint real ID-JAGs. <button class="reset" type="button" id="reset">Reset</button></p>

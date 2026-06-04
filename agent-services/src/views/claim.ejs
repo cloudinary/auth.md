@@ -3,35 +3,9 @@
 <head>
 <meta charset="utf-8">
 <title><%= title %></title>
-<style>
-  :root {
-    --brand-primary: #6D6DF2;
-    --brand-text: #030527;
-    --brand-bg: #FFFFFF;
-    --error: #e55039;
-    --muted: rgba(3, 5, 39, .65);
-    --border: rgba(3, 5, 39, .12);
-    --surface-soft: rgba(3, 5, 39, .04);
-    --warn-bg: rgba(245, 158, 11, .08);
-    --warn-border: rgba(245, 158, 11, .35);
-    --warn-text: #8a5a00;
-  }
-  body { font-family: system-ui, sans-serif; max-width: 32rem; margin: 4rem auto; padding: 0 1.5rem; line-height: 1.5; color: var(--brand-text); background: var(--brand-bg); }
-  h1 { color: <%= variant === "error" ? "var(--error)" : "var(--brand-primary)" %>; }
-  p { color: var(--muted); }
-  code { background: var(--surface-soft); padding: .05rem .3rem; border-radius: .2rem; font-size: .9em; }
-  form { margin-top: 1.5rem; display: flex; flex-direction: column; gap: .75rem; }
-  label { font-size: .85rem; font-weight: 600; color: var(--brand-text); }
-  input { width: 100%; padding: .65rem .75rem; border: 1px solid var(--border); border-radius: .35rem; font-size: 1.4rem; letter-spacing: .35rem; font-family: ui-monospace, "SF Mono", Menlo, monospace; text-align: center; background: var(--brand-bg); color: var(--brand-text); }
-  button { padding: .7rem 1rem; background: var(--brand-primary); color: white; border: none; border-radius: .35rem; font-weight: 600; font-size: 1rem; cursor: pointer; }
-  button:hover { filter: brightness(1.08); }
-  .err { color: var(--error); background: rgba(229, 80, 57, .08); border: 1px solid rgba(229, 80, 57, .35); padding: .5rem .75rem; border-radius: .35rem; font-size: .85rem; margin: 0; }
-  .warn { background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text); padding: .6rem .8rem; border-radius: .35rem; font-size: .8rem; margin-top: 1rem; }
-  .advisory { background: var(--warn-bg); border: 1px solid var(--warn-border); color: var(--warn-text); padding: .65rem .8rem; border-radius: .35rem; font-size: .85rem; margin: .5rem 0; }
-  .advisory + .advisory { margin-top: .4rem; }
-</style>
+<link rel="stylesheet" href="/style.css">
 </head>
-<body>
+<body class="page-claim variant-<%= variant %>">
 <h1><%= title %></h1>
 
 <% if (variant === "form" || variant === "form-error") { %>

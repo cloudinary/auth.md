@@ -3,30 +3,9 @@
 <head>
 <meta charset="utf-8">
 <title>Sign in</title>
-<style>
-  :root {
-    --brand-primary: #6D6DF2;
-    --brand-text: #030527;
-    --brand-bg: #FFFFFF;
-    --error: #e55039;
-    --muted: rgba(3, 5, 39, .65);
-    --border: rgba(3, 5, 39, .12);
-    --surface-soft: rgba(3, 5, 39, .04);
-  }
-  body { font-family: system-ui, sans-serif; max-width: 28rem; margin: 4rem auto; padding: 0 1.5rem; line-height: 1.5; color: var(--brand-text); background: var(--brand-bg); }
-  h1 { margin-bottom: .25rem; }
-  p { color: var(--muted); }
-  form { margin-top: 1.5rem; display: flex; flex-direction: column; gap: .75rem; }
-  label { font-size: .85rem; font-weight: 600; }
-  input, select { width: 100%; padding: .55rem .65rem; border: 1px solid var(--border); border-radius: .35rem; font-size: 1rem; background: var(--brand-bg); color: var(--brand-text); }
-  button { padding: .65rem 1rem; background: var(--brand-primary); color: white; border: none; border-radius: .35rem; font-weight: 600; font-size: 1rem; cursor: pointer; }
-  button:hover { filter: brightness(1.08); }
-  .err { color: var(--error); background: rgba(229, 80, 57, .08); border: 1px solid rgba(229, 80, 57, .35); padding: .5rem .75rem; border-radius: .35rem; font-size: .85rem; }
-  .seed { margin-top: .5rem; font-size: .8rem; color: var(--muted); }
-  .seed code { background: var(--surface-soft); padding: .05rem .3rem; border-radius: .2rem; }
-</style>
+<link rel="stylesheet" href="/style.css">
 </head>
-<body>
+<body class="page-login">
 <h1>Sign in</h1>
 <p>Mock identity provider. Any email works — unknown emails are auto-provisioned for the demo.</p>
 <% if (error) { %>

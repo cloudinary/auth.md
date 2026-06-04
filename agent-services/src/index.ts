@@ -36,6 +36,7 @@ async function main() {
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   app.set("view engine", "ejs");
   app.set("views", path.join(__dirname, "views"));
+  app.use(express.static(path.join(__dirname, "public")));
   app.use(cors({ origin: config.corsOrigins }));
   app.use(express.json());
   /*
