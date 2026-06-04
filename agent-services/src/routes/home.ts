@@ -341,7 +341,7 @@ function updateAnonExchangePreview() {
 }
 function updateAnonClaimPreview() {
   const body = {
-    type: "user_code",
+    type: "email",
     claim_token: abbrev(state.anon_claim_token),
     email: document.getElementById("anon-claim-email").value,
   };

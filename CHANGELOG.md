@@ -1,5 +1,19 @@
 # auth.md Changelog
 
+## v0.7.0 (2026-06-12)
+
+Adds a second body shape to `POST /agent/identity/claim` so an agent that started anonymous can bind its registration to a user identity by presenting an ID-JAG — skipping the user_code ceremony when the ID-JAG cleanly matches, falling back to a ceremony only when step-up is required. Keeps `registration_id` and pre-claim continuity intact instead of forcing the agent to re-register.
+
+### Added
+
+- `POST /agent/identity/claim` accepts `{ type: "identity_assertion", claim_token, assertion }` as an alternative to the existing `login_hint`-shape body. The body shape is now a discriminated union on `type`.
+- Clean-match response (200) — `{ status: "claimed", identity_assertion, assertion_expires }`. The agent skips polling and goes straight to `/oauth2/token` (jwt-bearer) with the new assertion.
+- Step-up response (200) — `{ status: "initiated", claim_attempt: { user_code, verification_uri, expires_in, interval } }`. Same ceremony shape as the `login_hint` body. The agent surfaces the code, the user confirms at `/claim`, and `/oauth2/token` (claim grant) yields the post-claim access_token.
+
+### Changed
+
+- `/agent/identity/claim` body is now a discriminated union on `type`. The previous `{ claim_token, login_hint }` shape is now `{ "type": "login_hint", claim_token, login_hint }`; existing callers must add the `"type": "login_hint"` discriminator.
+
 ## v0.6.0 (2026-06-10)
 
 Splits the email-based registration path out from `identity_assertion` and into a top-level `service_auth` registration type, with a body modeled on [OIDC CIBA](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html)'s `login_hint`. The previous shape was honest about how it worked — the service was verifying the email, not the agent — but it was filed under `identity_assertion` like the agent was asserting something. CIBA's vocabulary fits: the agent is hinting at who the user is, and the service authenticates the user out-of-band.

@@ -296,6 +296,14 @@ agentAuthRouter.post(config.claimEndpointPath, async (req, res) => {
     });
     return;
   }
+  if (parsed.value.type === "identity_assertion") {
+    return handleAnonymousClaimViaIdJag(
+      registration,
+      parsed.value.assertion,
+      res,
+    );
+  }
+
   /*
    * Mint a fresh ceremony (new claim_attempt_token + new user_code). The
    * login_hint is per-attempt — a re-initiation may supply a corrected
@@ -341,13 +349,16 @@ agentAuthRouter.post(config.claimEndpointPath, async (req, res) => {
 
 /**
  * Anonymous-claim-via-ID-JAG: the agent skipped the user_code ceremony
- * because it already has an ID-JAG. Verify, match, bind atomically, return
- * a v2 identity_assertion the agent exchanges at /oauth2/token.
+ * because it already has an ID-JAG. Two terminal shapes:
  *
- * If the matcher would normally trigger step-up (ID-JAG's email matches an
- * existing user, no (iss, sub) delegation yet), refuse — the agent has to
- * walk normal step-up at /agent/identity first. After that completes, the
- * delegation exists; a retry here clean-matches.
+ *   - Clean match → bind atomically, return v2 identity_assertion (200,
+ *     status: "claimed").
+ *   - Step-up required (ID-JAG email matches a different existing user,
+ *     no (iss, sub) delegation yet) → mint a user_code ceremony bound to
+ *     the matched user AND the ID-JAG triple, return the same ceremony
+ *     block as the email-shape claim (200, status: "initiated"). The
+ *     agent surfaces the code; the user confirms at /claim; completeClaim
+ *     binds both the user and the (iss, sub) delegation.
  */
 async function handleAnonymousClaimViaIdJag(
   registration: Registration,

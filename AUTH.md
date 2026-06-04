@@ -314,7 +314,9 @@ Content-Type: application/json
 }
 ```
 
-Response (200):
+Two success shapes:
+
+**Clean match (200)** — the ID-JAG cleanly matches an existing `(iss, sub)` delegation, or matches by verified email with no conflicting existing account. The registration is bound atomically, no user confirmation needed:
 
 ```json
 {
@@ -327,11 +329,27 @@ Response (200):
 
 Skip to [Step 5](#step-5--exchange-the-assertion) with the new `identity_assertion`.
 
-Three things can go wrong here, all 401:
+**Step-up required (200)** — the ID-JAG's verified email matches an existing different user at the service and no `(iss, sub)` delegation exists yet. The service won't silently bind the delegation; surface the returned ceremony block to the user and poll `/oauth2/token` exactly as in the user-code claim flow ([Step 4b](#4b-hand-off-to-the-user) and [Step 4c](#4c-poll-for-completion)). The user signs in, confirms linking the provider identity to their account, and the next poll resolves to a post-claim access_token plus a v2 `identity_assertion`:
 
-- **`login_required`** — the ID-JAG's `auth_time` is missing or stale. Re-authenticate at your provider and retry.
-- **`interaction_required`** — the ID-JAG matched an existing user at the service but no `(iss, sub)` delegation exists yet. Walk normal step-up at `/agent/identity` first (Step 3); the delegation gets bound by the user's confirmation there, and a retry here clean-matches.
-- **`invalid_grant`** / other ID-JAG verification errors — fix the ID-JAG (fresh `jti`, correct `aud`, etc.) and retry.
+```json
+{
+  "registration_id": "reg_...",
+  "claim_attempt_id": "cla_...",
+  "status": "initiated",
+  "expires_at": "...",
+  "claim_attempt": {
+    "user_code": "123456",
+    "verification_uri": "https://auth.service.example.com/claim?claim_attempt_token=...",
+    "expires_in": 600,
+    "interval": 5
+  }
+}
+```
+
+Failures:
+
+- **`login_required` (401)** — the ID-JAG's `auth_time` is missing or stale. Re-authenticate at your provider and retry.
+- **`invalid_grant`** / other ID-JAG verification errors (400) — fix the ID-JAG (fresh `jti`, correct `aud`, etc.) and retry.
 
 The `email` you supply on anonymous `/claim` binds the registration to the human you intend the agent to act on behalf of — only that signed-in user can complete the ceremony. Without this, a third party who intercepted the `user_code` could claim the agent for themselves.
 

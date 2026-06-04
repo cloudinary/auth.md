@@ -540,19 +540,35 @@ Implementation:
 
 1. Hash the `claim_token` and look up the registration. Reject if not found, expired, or already claimed; reject if `kind !== "anonymous"` with `claimed_or_in_flight`.
 2. Verify the ID-JAG the same way `/agent/identity` does — signature, audience, replay, `auth_time` freshness. `auth_time_*` errors become `401 login_required` so the agent knows to refresh upstream (same as the `/agent/identity` path).
-3. Run the matcher. If `kind === "step_up_required"` (ID-JAG matches an existing user, no `(iss, sub)` delegation yet), refuse with `401 interaction_required` pointing to `/agent/identity` — the user has to walk the normal step-up ceremony there to confirm linking the provider identity, after which a retry here clean-matches.
-4. On clean-match: bind the anonymous registration to the resolved user (`user_id`, `claimed_at`), record the ID-JAG triple as `id_jag = { iss, sub, aud }`, call `upsertDelegation`, revoke pre-claim access_tokens (same as user_code completion), and return a v2 `identity_assertion`:
+3. Run the matcher. Two terminal shapes from here:
+   - **Clean match** (no email conflict, or the existing `(iss, sub)` delegation matches): bind the anonymous registration to the resolved user (`user_id`, `claimed_at`), record the ID-JAG triple as `id_jag = { iss, sub, aud }`, call `upsertDelegation`, revoke pre-claim access_tokens (same as user_code completion), and return a v2 `identity_assertion`:
 
-```json
-{
-  "registration_id": "reg_...",
-  "status": "claimed",
-  "identity_assertion": "<service-signed JWT>",
-  "assertion_expires": "2026-05-04T13:00:00.000Z"
-}
-```
+     ```json
+     {
+       "registration_id": "reg_...",
+       "status": "claimed",
+       "identity_assertion": "<service-signed JWT>",
+       "assertion_expires": "2026-05-04T13:00:00.000Z"
+     }
+     ```
 
-The agent exchanges the v2 assertion at `/oauth2/token` (jwt-bearer) for a post-claim access_token. Same shape as the user_code ceremony's terminal state — the only difference is no polling.
+     The agent exchanges the v2 assertion at `/oauth2/token` (jwt-bearer) for a post-claim access_token. Same shape as the user_code ceremony's terminal state — the only difference is no polling.
+   - **Step-up required** (`matcher.kind === "step_up_required"` — ID-JAG's verified email matches an existing different user, no `(iss, sub)` delegation): mint a fresh `claim_attempt` on the anonymous registration with the matched email and the `id_jag = { iss, sub, aud }` triple, and return **200 with the ceremony block** — the same shape `/agent/identity/claim` returns for the email-shape body. The agent surfaces `user_code` + `verification_uri` to the user; the user confirms at `/claim`, which binds the anonymous registration to the user AND records the `(iss, sub)` delegation in one shot. The agent then polls `/oauth2/token` (claim grant) for the post-claim access_token, same as the email-shape flow.
+
+     ```json
+     {
+       "registration_id": "reg_...",
+       "claim_attempt_id": "cla_...",
+       "status": "initiated",
+       "expires_at": "...",
+       "claim_attempt": {
+         "user_code": "123456",
+         "verification_uri": "https://auth.service.example.com/claim?claim_attempt_token=...",
+         "expires_in": 600,
+         "interval": 5
+       }
+     }
+     ```
 
 **Why anonymous-only.** Email-verification registrations have already asserted an email and started a ceremony for that email. Replacing that with a different ID-JAG identity is ambiguous (which identity wins?) and not worth the complexity — agents that started email-verification but later got an ID-JAG can just re-register at `/agent/identity` with the ID-JAG directly.
 
