@@ -638,9 +638,9 @@ export function completeClaim(
   }
 
   if (registration.id_jag) {
-    /* Record the (iss, sub) → user delegation. Future ID-JAGs from this
-     * provider for this sub will resolve to this user directly, with no
-     * ceremony required. */
+    /* Remember the (iss, sub) → user mapping so the next ID-JAG from
+     * this provider for this sub goes straight through without a
+     * ceremony. */
     upsertDelegation(
       registration.id_jag.iss,
       registration.id_jag.sub,
@@ -663,11 +663,11 @@ export type IdJagClaimResult =
     };
 
 /*
- * Finishes a claim in one step using an ID-JAG, instead of running the
- * user_code ceremony. Binds the registration to the ID-JAG's user,
- * records the (iss, sub, aud) as a delegation, revokes pre-claim
- * access_tokens. Caller mints a fresh identity_assertion from the
- * returned registration.
+ * Closes out a claim in one shot using an ID-JAG, no user_code
+ * ceremony needed. Binds the registration to the ID-JAG's user,
+ * records the (iss, sub, aud) as a delegation, and revokes any
+ * pre-claim access_tokens. The caller mints a fresh identity_assertion
+ * off the returned registration.
  */
 export function completeAnonymousClaimViaIdJag(
   registration: Registration,
@@ -683,9 +683,9 @@ export function completeAnonymousClaimViaIdJag(
   if (registration.status === "expired") {
     return { ok: false, error: "claim_expired" };
   }
-  /* A user_code ceremony is already in flight for this registration —
-   * the user may be on the /claim page right now. Let it finish (or
-   * time out) before completing via the ID-JAG path. */
+  /* There's already a user_code ceremony in flight — the user might
+   * be looking at the /claim page right now. Let that finish (or time
+   * out) before the ID-JAG path takes over. */
   if (registration.status === "pending_claim") {
     return { ok: false, error: "ceremony_in_flight" };
   }
