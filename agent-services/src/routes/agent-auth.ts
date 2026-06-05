@@ -298,16 +298,16 @@ agentAuthRouter.post(config.claimEndpointPath, async (req, res) => {
   }
   if (parsed.value.type === "identity_assertion") {
     /*
-     * The atomic ID-JAG claim path is anonymous-only. Email-verification
-     * registrations are already bound to a specific email and need that
-     * user to confirm; id_jag step-up registrations are already mid-
-     * ceremony and refresh via the email-shape body.
+     * The atomic ID-JAG claim path is anonymous-only. service_auth
+     * registrations are already bound to a specific login_hint and need
+     * that user to confirm; id_jag step-up registrations are already mid-
+     * ceremony and refresh via the login_hint-shape body.
      */
     if (registration.kind !== "anonymous") {
       res.status(409).json({
         error: "claimed_or_in_flight",
         message:
-          "ID-JAG claim is only supported for anonymous registrations. Use the email-shape body to refresh the ceremony.",
+          "ID-JAG claim is only supported for anonymous registrations. Use the login_hint-shape body to refresh the ceremony.",
       });
       return;
     }
@@ -324,14 +324,6 @@ agentAuthRouter.post(config.claimEndpointPath, async (req, res) => {
    * email; only the current attempt's view_token and user_code work, and
    * the /claim page surfaces the current attempt's hint as an advisory.
    */
-  if (parsed.value.type === "identity_assertion") {
-    return handleAnonymousClaimViaIdJag(
-      registration,
-      parsed.value.assertion,
-      res,
-    );
-  }
-
   const login_hint = classifyLoginHint(parsed.value.login_hint);
   if (!login_hint) {
     res.status(400).json({
@@ -385,27 +377,6 @@ async function handleAnonymousClaimViaIdJag(
   }
   const { claims } = verified;
   const match = matchOrProvision(claims);
-
-  /*
-   * Same email-immutability protection as the email-shape /claim path:
-   * if the registration already has a bound email (from a prior /claim
-   * call), the user this ID-JAG resolves to must have that email.
-   * Otherwise an agent could redirect the ceremony to a different user
-   * by swapping in an ID-JAG for someone else.
-   */
-  const boundEmail = registration.claim?.email;
-  const incomingEmail =
-    match.kind === "step_up_required"
-      ? match.matched_user.email
-      : match.user.email;
-  if (boundEmail && boundEmail.toLowerCase() !== incomingEmail.toLowerCase()) {
-    res.status(400).json({
-      error: "email_mismatch",
-      message:
-        "The ID-JAG resolves to a different user than the registration's bound email.",
-    });
-    return;
-  }
 
   if (match.kind === "step_up_required") {
     /*
