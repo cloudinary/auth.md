@@ -663,7 +663,11 @@ export type IdJagClaimResult =
   | { ok: true; registration: Registration; user: User }
   | {
       ok: false;
-      error: "previously_claimed" | "claim_expired" | "wrong_kind";
+      error:
+        | "previously_claimed"
+        | "claim_expired"
+        | "wrong_kind"
+        | "ceremony_in_flight";
     };
 
 /**
@@ -691,6 +695,17 @@ export function completeAnonymousClaimViaIdJag(
   }
   if (registration.status === "expired") {
     return { ok: false, error: "claim_expired" };
+  }
+  /*
+   * Defense-in-depth: refuse to atomically bind when a user_code ceremony
+   * is already in flight for this registration. The route-layer email-
+   * immutability check already prevents the typical hijack scenario by
+   * ensuring the ID-JAG resolves to the bound user, but this gate stops
+   * any code path that bypasses the route from silently overwriting an
+   * in-flight ceremony's state.
+   */
+  if (registration.status === "pending_claim") {
+    return { ok: false, error: "ceremony_in_flight" };
   }
 
   registration.user_id = user.id;

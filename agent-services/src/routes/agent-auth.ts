@@ -386,6 +386,27 @@ async function handleAnonymousClaimViaIdJag(
   const { claims } = verified;
   const match = matchOrProvision(claims);
 
+  /*
+   * Same email-immutability protection as the email-shape /claim path:
+   * if the registration already has a bound email (from a prior /claim
+   * call), the user this ID-JAG resolves to must have that email.
+   * Otherwise an agent could redirect the ceremony to a different user
+   * by swapping in an ID-JAG for someone else.
+   */
+  const boundEmail = registration.claim?.email;
+  const incomingEmail =
+    match.kind === "step_up_required"
+      ? match.matched_user.email
+      : match.user.email;
+  if (boundEmail && boundEmail.toLowerCase() !== incomingEmail.toLowerCase()) {
+    res.status(400).json({
+      error: "email_mismatch",
+      message:
+        "The ID-JAG resolves to a different user than the registration's bound email.",
+    });
+    return;
+  }
+
   if (match.kind === "step_up_required") {
     /*
      * The ID-JAG matched an existing user by verified email. The ID-JAG
@@ -430,7 +451,8 @@ async function handleAnonymousClaimViaIdJag(
      * surface store-level errors with the right HTTP shape if reached.
      */
     const status =
-      result.error === "previously_claimed"
+      result.error === "previously_claimed" ||
+      result.error === "ceremony_in_flight"
         ? 409
         : result.error === "claim_expired"
           ? 410
