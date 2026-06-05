@@ -330,7 +330,7 @@ Two success shapes:
 
 Skip to [Step 5](#step-5--exchange-the-assertion) with the new `identity_assertion`.
 
-**Confirmation required (200)** — the ID-JAG's verified email matches an existing different account at the service and no `(iss, sub)` delegation exists yet. The service won't silently bind the delegation; surface the returned ceremony block to the user and poll `/oauth2/token` exactly as in the user-code claim flow ([Step 4b](#4b-hand-off-to-the-user) and [Step 4c](#4c-poll-for-completion)). The user signs in, confirms linking the provider identity to their account, and the next poll resolves to a post-claim access_token plus a v2 `identity_assertion`:
+**Confirmation required (200)** — the ID-JAG's verified email matches an existing different account at the service and no `(iss, sub)` delegation exists yet. The service won't silently bind the delegation; surface the returned `claim_attempt` block to the user and poll `/oauth2/token` exactly as in the user-code claim flow ([Step 4b](#4b-hand-off-to-the-user) and [Step 4c](#4c-poll-for-completion)). The user signs in, confirms linking the provider identity to their account, and the next poll resolves to a post-claim access_token plus a v2 `identity_assertion`:
 
 ```json
 {

@@ -554,7 +554,7 @@ Implementation:
      ```
 
      The agent exchanges the v2 assertion at `/oauth2/token` (jwt-bearer) for a post-claim access_token. Same shape as the user_code ceremony's terminal state — the only difference is no polling.
-   - **Step-up required** (`matcher.kind === "step_up_required"` — ID-JAG's verified email matches an existing different user, no `(iss, sub)` delegation): mint a fresh `claim_attempt` on the anonymous registration with the matched email and the `id_jag = { iss, sub, aud }` triple, and return **200 with the ceremony block** — the same shape `/agent/identity/claim` returns for the email-shape body. The agent surfaces `user_code` + `verification_uri` to the user; the user confirms at `/claim`, which binds the anonymous registration to the user AND records the `(iss, sub)` delegation in one shot. The agent then polls `/oauth2/token` (claim grant) for the post-claim access_token, same as the email-shape flow.
+   - **Step-up required** (`matcher.kind === "step_up_required"` — ID-JAG's verified email matches an existing different user, no `(iss, sub)` delegation): mint a fresh `claim_attempt` on the anonymous registration with the matched email and the `id_jag = { iss, sub, aud }` triple, and return **200 with the `claim_attempt` block** — the same shape `/agent/identity/claim` returns for the email-shape body. The agent surfaces `user_code` + `verification_uri` to the user; the user confirms at `/claim`, which binds the anonymous registration to the user AND records the `(iss, sub)` delegation in one shot. The agent then polls `/oauth2/token` (claim grant) for the post-claim access_token, same as the email-shape flow.
 
      ```json
      {
