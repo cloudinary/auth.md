@@ -265,7 +265,7 @@ For **service_auth** registrations, you already have them — they're in the `cl
 For **anonymous** registrations, you have two options:
 
 - **login_hint shape (`type: "login_hint"`)** — start a user_code ceremony for the user identified by the login_hint. Default path; works when the agent has no provider identity.
-- **ID-JAG shape (`type: "identity_assertion"`)** — if you later acquire an ID-JAG, claim atomically without the ceremony. See [4a-alt](#4a-alt-claim-via-id-jag) below.
+- **ID-JAG shape (`type: "identity_assertion"`)** — if you later acquire an ID-JAG, you can finish the claim straight away and skip the user_code ceremony. See [4a-alt](#4a-alt-claim-via-id-jag) below.
 
 login_hint shape:
 
@@ -316,7 +316,7 @@ Content-Type: application/json
 
 Two success shapes:
 
-**No confirmation needed (200)** — the ID-JAG is accepted on its own (either an existing `(iss, sub)` delegation, or no email conflict with another account). The registration is bound atomically:
+**No confirmation needed (200)** — the ID-JAG is enough on its own, either because there's already an `(iss, sub)` delegation for this user or because the ID-JAG's email doesn't conflict with another account at the service. The registration is bound right away:
 
 ```json
 {
