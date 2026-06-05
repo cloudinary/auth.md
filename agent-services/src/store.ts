@@ -638,8 +638,9 @@ export function completeClaim(
   }
 
   if (registration.id_jag) {
-    /* Bind the (iss, sub) → user delegation so future ID-JAGs from this
-     * provider for this sub take the clean-match path. */
+    /* Record the (iss, sub) → user delegation. Future ID-JAGs from this
+     * provider for this sub will resolve to this user directly, with no
+     * ceremony required. */
     upsertDelegation(
       registration.id_jag.iss,
       registration.id_jag.sub,
@@ -662,10 +663,11 @@ export type IdJagClaimResult =
     };
 
 /*
- * Atomic counterpart to completeClaim's user_code path: bind the
- * anonymous registration to the ID-JAG's user, record the (iss, sub, aud)
- * triple as a delegation, revoke pre-claim access_tokens. The caller
- * mints the v2 identity_assertion off the returned registration.
+ * Finishes a claim in one step using an ID-JAG, instead of running the
+ * user_code ceremony. Binds the registration to the ID-JAG's user,
+ * records the (iss, sub, aud) as a delegation, revokes pre-claim
+ * access_tokens. Caller mints a fresh identity_assertion from the
+ * returned registration.
  */
 export function completeAnonymousClaimViaIdJag(
   registration: Registration,
@@ -681,8 +683,9 @@ export function completeAnonymousClaimViaIdJag(
   if (registration.status === "expired") {
     return { ok: false, error: "claim_expired" };
   }
-  /* Defense-in-depth: never atomically bind over an in-flight ceremony.
-   * The route's email-immutability gate is the primary check. */
+  /* A user_code ceremony is already in flight for this registration —
+   * the user may be on the /claim page right now. Let it finish (or
+   * time out) before completing via the ID-JAG path. */
   if (registration.status === "pending_claim") {
     return { ok: false, error: "ceremony_in_flight" };
   }

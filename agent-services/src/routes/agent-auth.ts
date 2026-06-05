@@ -336,9 +336,9 @@ agentAuthRouter.post(config.claimEndpointPath, async (req, res) => {
 });
 
 /*
- * Verifies the ID-JAG, then either binds the registration atomically
- * (clean match) or kicks off a user_code ceremony for the user to
- * confirm (step-up). Response shapes are documented in AUTH.md.
+ * Verifies the ID-JAG, then either completes the claim right away (when
+ * the ID-JAG is enough on its own) or starts a user_code ceremony for
+ * the user to confirm (when it isn't). Response shapes are in AUTH.md.
  */
 async function handleAnonymousClaimViaIdJag(
   registration: Registration,
