@@ -254,19 +254,6 @@ async function handleServiceAuth(
   });
 }
 
-/*
- * Initiates or re-mints a claim. Dispatched on body `type`:
- *
- *   - { type: "login_hint", claim_token, login_hint } → start or refresh
- *     a user_code ceremony. Anonymous registrations get first-initiation
- *     here (login_hint binds the registration); service_auth registrations
- *     get refresh-only (the initial ceremony was minted at /agent/identity).
- *   - { type: "identity_assertion", claim_token, assertion } → claim
- *     an anonymous registration atomically using an ID-JAG (no
- *     user_code ceremony needed). Step-up returns a ceremony block
- *     directly when the ID-JAG email matches a different existing
- *     account.
- */
 agentAuthRouter.post(config.claimEndpointPath, async (req, res) => {
   const parsed = parseBody(claimBody, req.body);
   if (!parsed.ok) {
@@ -297,12 +284,7 @@ agentAuthRouter.post(config.claimEndpointPath, async (req, res) => {
     return;
   }
   if (parsed.value.type === "identity_assertion") {
-    /*
-     * The atomic ID-JAG claim path is anonymous-only. service_auth
-     * registrations are already bound to a specific login_hint and need
-     * that user to confirm; id_jag step-up registrations are already mid-
-     * ceremony and refresh via the login_hint-shape body.
-     */
+    /* Only anonymous registrations claim atomically via ID-JAG. */
     if (registration.kind !== "anonymous") {
       res.status(409).json({
         error: "claimed_or_in_flight",
@@ -353,18 +335,10 @@ agentAuthRouter.post(config.claimEndpointPath, async (req, res) => {
   });
 });
 
-/**
- * Anonymous-claim-via-ID-JAG: the agent skipped the user_code ceremony
- * because it already has an ID-JAG. Two terminal shapes:
- *
- *   - Clean match → bind atomically, return v2 identity_assertion (200,
- *     status: "claimed").
- *   - Step-up required (ID-JAG email matches a different existing user,
- *     no (iss, sub) delegation yet) → mint a user_code ceremony bound to
- *     the matched user AND the ID-JAG triple, return the same ceremony
- *     block as the email-shape claim (200, status: "initiated"). The
- *     agent surfaces the code; the user confirms at /claim; completeClaim
- *     binds both the user and the (iss, sub) delegation.
+/*
+ * Verifies the ID-JAG, then either binds the registration atomically
+ * (clean match) or kicks off a user_code ceremony for the user to
+ * confirm (step-up). Response shapes are documented in AUTH.md.
  */
 async function handleAnonymousClaimViaIdJag(
   registration: Registration,
@@ -380,12 +354,9 @@ async function handleAnonymousClaimViaIdJag(
 
   if (match.kind === "step_up_required") {
     /*
-     * The ID-JAG matched an existing user by verified email. The ID-JAG
-     * alone isn't enough — we need the user to confirm linking this
-     * provider identity to their account. Initiate the same user_code
-     * ceremony as the login_hint-shape claim, but bind the ID-JAG triple onto
-     * the anonymous registration so completeClaim upserts the (iss, sub)
-     * delegation alongside the user binding.
+     * Bind the ID-JAG triple onto the registration alongside the
+     * ceremony so completeClaim upserts the (iss, sub) delegation when
+     * the user confirms.
      */
     const fresh = recordClaimAttempt(
       registration,

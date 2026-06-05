@@ -23,15 +23,7 @@ export const agentAuthBody = z.union([
   anonymousBody,
 ]);
 
-/**
- * Two shapes for POST /agent/identity/claim, discriminated on `type`:
- *  - `login_hint`: agent provides a login_hint for the user who's
- *    claiming. Starts a user_code ceremony (the user signs in at the
- *    service and types a code the agent surfaces).
- *  - `identity_assertion`: agent provides an ID-JAG. Completes the claim
- *    atomically — useful when the agent acquired an ID-JAG after starting
- *    anonymous and wants to short-circuit the browser ceremony.
- */
+/* POST /agent/identity/claim — discriminated on `type`. */
 const loginHintClaimBody = z.object({
   type: z.literal("login_hint"),
   claim_token: z.string().min(1),

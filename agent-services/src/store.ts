@@ -527,11 +527,7 @@ export function findRegistrationByClaimViewHash(
 export function recordClaimAttempt(
   registration: Registration,
   login_hint: LoginHint,
-  /**
-   * Optional ID-JAG triple to bind on completion. Set when the ceremony
-   * was triggered by an ID-JAG step-up at /claim — completeClaim then
-   * upserts the (iss, sub) delegation alongside the user binding.
-   */
+  /* When set, completeClaim upserts the (iss, sub) → user delegation. */
   idJag?: { iss: string; sub: string; aud: string },
 ): {
   claimViewTokenPlaintext: string;
@@ -642,13 +638,8 @@ export function completeClaim(
   }
 
   if (registration.id_jag) {
-    /*
-     * If an ID-JAG triple is recorded (set on id_jag-kind step-up
-     * registrations, or anonymous registrations whose ceremony was
-     * initiated by an ID-JAG step-up at /claim), bind the (iss, sub) →
-     * user delegation so future ID-JAGs from this provider for this sub
-     * take the clean-match path.
-     */
+    /* Bind the (iss, sub) → user delegation so future ID-JAGs from this
+     * provider for this sub take the clean-match path. */
     upsertDelegation(
       registration.id_jag.iss,
       registration.id_jag.sub,
@@ -670,17 +661,11 @@ export type IdJagClaimResult =
         | "ceremony_in_flight";
     };
 
-/**
- * Complete an anonymous claim atomically by binding it to a verified ID-JAG
- * instead of running the user_code ceremony. The agent presented an ID-JAG
- * (verified upstream); we record the (iss, sub, aud) on the registration
- * and bind the delegation. Pre-claim access_tokens are revoked, same as
- * the user_code path. Returns the updated registration so the caller can
- * mint a v2 identity_assertion.
- *
- * Restricted to anonymous registrations — email-verification regs are
- * already mid-ceremony with their own asserted email; mixing in a
- * different ID-JAG identity there isn't meaningful.
+/*
+ * Atomic counterpart to completeClaim's user_code path: bind the
+ * anonymous registration to the ID-JAG's user, record the (iss, sub, aud)
+ * triple as a delegation, revoke pre-claim access_tokens. The caller
+ * mints the v2 identity_assertion off the returned registration.
  */
 export function completeAnonymousClaimViaIdJag(
   registration: Registration,
@@ -696,14 +681,8 @@ export function completeAnonymousClaimViaIdJag(
   if (registration.status === "expired") {
     return { ok: false, error: "claim_expired" };
   }
-  /*
-   * Defense-in-depth: refuse to atomically bind when a user_code ceremony
-   * is already in flight for this registration. The route-layer email-
-   * immutability check already prevents the typical hijack scenario by
-   * ensuring the ID-JAG resolves to the bound user, but this gate stops
-   * any code path that bypasses the route from silently overwriting an
-   * in-flight ceremony's state.
-   */
+  /* Defense-in-depth: never atomically bind over an in-flight ceremony.
+   * The route's email-immutability gate is the primary check. */
   if (registration.status === "pending_claim") {
     return { ok: false, error: "ceremony_in_flight" };
   }
