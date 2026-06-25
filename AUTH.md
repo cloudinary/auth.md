@@ -5,7 +5,7 @@ You are an agent. Cloudinary supports **agentic registration** — discover → 
 Cloudinary exposes **two** registration paths. Pick one with this decision tree:
 
 1. **The user already has (or will sign in to) a Cloudinary account** → **[Delegation via OAuth](#path-1--delegation-oauth-via-cloudinarys-mcp-servers)**. The user authenticates and consents in a browser; you receive a scoped, short-lived bearer token. This is the richer path and is what Cloudinary's remote MCP servers use.
-2. **The user has no Cloudinary account yet and you only have their email** → **[Provisioning via `service_auth`](#path-2--provisioning-service_auth)**. You create a new account for them; Cloudinary returns credentials that stay **inert** until the human verifies their email (the claim ceremony).
+2. **The user has no Cloudinary account yet and you only have their email** → **[Provisioning via `service_auth`](#path-2--provisioning-service_auth)**. You create a new account for them; Cloudinary returns credentials that stay **inert** until the human verifies their email (the claim ceremony). If that email already belongs to a Cloudinary account, provisioning is rejected — switch to Path 1.
 
 > **Mapping to the reference protocol.** Path 1 is the protocol's interactive delegation, layered on standard OAuth discovery (RFC 9728 / RFC 8414). Path 2 is the protocol's `service_auth` identity type. The protocol's `identity_assertion` (ID-JAG) type is **not supported yet** — see [Future](#future--identity_assertion-id-jag). A "Divergences from the reference protocol" note is at the [end](#divergences-from-the-reference-protocol).
 
@@ -14,6 +14,8 @@ Cloudinary exposes **two** registration paths. Pick one with this decision tree:
 ## Path 1 — Delegation (OAuth via Cloudinary's MCP servers)
 
 Use this when the agent acts on behalf of a user who has, or will sign in to, a Cloudinary account. The human authenticates Cloudinary-side in a browser and chooses which product environment (cloud) you may act on; you get a scoped bearer token. No API key/secret ever touches the agent.
+
+This path is **interactive**: it requires the user to complete a browser sign-in and consent (an OAuth redirect). There is no fully headless delegation for existing accounts yet — that's the future [ID-JAG](#future--identity_assertion-id-jag) path.
 
 ### Step 1 — Discover
 
@@ -25,6 +27,8 @@ Cloudinary's remote MCP servers are OAuth 2.1 protected resources. Each publishe
 | Environment config | `https://environment-config.mcp.cloudinary.com/mcp` |
 | Structured metadata | `https://structured-metadata.mcp.cloudinary.com/mcp` |
 | Analysis | `https://analysis.mcp.cloudinary.com/sse` |
+
+Each server advertises **its own** scopes — always read the PRM of the one you're targeting. The example below is `asset-management` (`asset_management` / `upload`); the **Analysis** server uses the `/sse` transport and different scopes (`media_analysis`, `query_analysis_tasks`).
 
 Two-hop discovery (per [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728) → [RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414)):
 
@@ -89,7 +93,7 @@ GET https://asset-management.mcp.cloudinary.com/authorize
   ?response_type=code
   &client_id=<client_id>
   &redirect_uri=<callback>
-  &scope=openid%20email%20offline_access%20asset_management%20upload
+  &scope=openid%20profile%20email%20offline_access%20asset_management%20upload
   &code_challenge=<S256>&code_challenge_method=S256
 ```
 
@@ -109,7 +113,7 @@ You receive a JWT **access token** (short-lived) and, with `offline_access`, a *
 
 ### Step 5 — Use, refresh, revoke
 
-- **Use:** send `Authorization: Bearer <access_token>` to the MCP server (or to the Cloudinary API the token is scoped for).
+- **Use:** present `Authorization: Bearer <access_token>`. The token works both with the MCP server you obtained it from and with Cloudinary's REST APIs — Cloudinary validates OAuth bearer tokens by introspection, so `asset_management` reaches the Admin API and `upload` reaches the Upload API at `https://api.cloudinary.com/v1_1/<cloud_name>/…`.
 - **Refresh:** when the access token expires, use the `refresh_token` grant at the `token_endpoint`.
 - **Revoke:** the MCP authorization-server metadata does not currently advertise a `revocation_endpoint`. Signing the user out of Cloudinary invalidates the session behind the grant, and access tokens are short-lived so they age out quickly.
 
@@ -204,6 +208,7 @@ All errors use Cloudinary's standard envelope:
 | Status | `code` | What to do |
 | --- | --- | --- |
 | 400 | *(validation message)* | Missing/oversized `email` or agent metadata, or invalid UTF-8. Fix the body. |
+| 400 | *(email already registered)* | The email already has a Cloudinary account — don't retry provisioning; use **Path 1** (delegation) instead. |
 | 403 | `agent_registration_disabled` | Agent signup is temporarily off. Do not retry tightly; fall back to asking the human to sign up. |
 | 403 | `geo_location_not_permitted` | Requests from your region are not allowed. |
 | 403 | *(none — "Invalid request")* | Request blocked (e.g. IP gating). Do not probe. |
