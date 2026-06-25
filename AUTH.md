@@ -116,7 +116,7 @@ You receive a JWT **access token** (short-lived) and, with `offline_access`, a *
 
 ### Step 5 — Use, refresh, revoke
 
-- **Use:** present `Authorization: Bearer <access_token>`. The token works both with the MCP server you obtained it from and with Cloudinary's REST APIs — Cloudinary validates OAuth bearer tokens by introspection, so `asset_management` reaches the Admin API and `upload` reaches the Upload API at `https://api.cloudinary.com/v1_1/<cloud_name>/…`. For the REST sub-case you need `<cloud_name>`: read it from the `userinfo` endpoint (or the token's claims) — the user chose it at consent. MCP tool calls don't need it; the server already operates in the consented cloud.
+- **Use:** present `Authorization: Bearer <access_token>`. The token works both with the MCP server you obtained it from and with Cloudinary's REST APIs — Cloudinary validates OAuth bearer tokens by introspection, so `asset_management` reaches the Admin API and `upload` reaches the Upload API at `https://api.cloudinary.com/v1_1/<cloud_name>/…`. For the REST sub-case you need `<cloud_name>` — the cloud the user selected at consent. It's carried in the access token's claims; the token is a JWT, so decode it and read the cloud claim. (Access tokens are normally opaque to clients, but Cloudinary's are JWTs, so reading a claim is workable.) MCP tool calls don't need it — the server already operates in the consented cloud.
 - **Refresh:** when the access token expires, use the `refresh_token` grant at the `token_endpoint`.
 - **Revoke:** the MCP authorization-server metadata does not currently advertise a `revocation_endpoint`. Signing the user out of Cloudinary invalidates the session behind the grant, and access tokens are short-lived so they age out quickly.
 
