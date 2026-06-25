@@ -85,10 +85,10 @@ Public clients (`token_endpoint_auth_method: "none"`) are accepted — use PKCE.
 
 ### Step 3 — Authorize (browser, with consent + cloud selection)
 
-Run a standard [OAuth 2.1 authorization-code flow with PKCE](https://datatracker.ietf.org/doc/html/rfc7636). Request the scopes you need:
+Run a standard [OAuth 2.1 authorization-code flow with PKCE](https://datatracker.ietf.org/doc/html/rfc7636). Request the scopes you need — each authorizes a set of MCP tools, not direct REST access (see [Step 5](#step-5--use-refresh-revoke)):
 
-- `asset_management` — Admin API (manage assets + account/upload/transform/delivery settings)
-- `upload` — Upload API
+- `asset_management` — Admin-API capabilities (manage assets + account/upload/transform/delivery settings)
+- `upload` — Upload-API capabilities (upload assets)
 - plus `openid profile email offline_access` (the last gives you a refresh token)
 
 ```http
@@ -116,7 +116,7 @@ You receive a JWT **access token** (short-lived) and, with `offline_access`, a *
 
 ### Step 5 — Use, refresh, revoke
 
-- **Use:** present `Authorization: Bearer <access_token>`. The token works both with the MCP server you obtained it from and with Cloudinary's REST APIs — Cloudinary validates OAuth bearer tokens by introspection, so `asset_management` reaches the Admin API and `upload` reaches the Upload API at `https://api.cloudinary.com/v1_1/<cloud_name>/…`. For the REST sub-case you need `<cloud_name>` — the cloud the user selected at consent. It's carried in the access token's claims; the token is a JWT, so decode it and read the cloud claim. (Access tokens are normally opaque to clients, but Cloudinary's are JWTs, so reading a claim is workable.) MCP tool calls don't need it — the server already operates in the consented cloud.
+- **Use:** present `Authorization: Bearer <access_token>` to the MCP server you obtained it from. This is an **MCP access token** — it authenticates calls to Cloudinary's MCP servers only; you **cannot** use it directly against Cloudinary's REST APIs (`https://api.cloudinary.com/…`). The MCP server already operates in the cloud the user selected at consent, so you don't need `<cloud_name>` yourself.
 - **Refresh:** when the access token expires, use the `refresh_token` grant at the `token_endpoint`.
 - **Revoke:** the MCP authorization-server metadata does not currently advertise a `revocation_endpoint`. Signing the user out of Cloudinary invalidates the session behind the grant, and access tokens are short-lived so they age out quickly.
 
@@ -186,7 +186,7 @@ That completes the claim: Cloudinary marks the email verified and **activates** 
 
 **Preferred — switch to delegation (Path 1).** This becomes available **only after the claim in Step 2 is complete** — the user has verified their email and set a password, which is the login Path 1 delegates against. There is no OAuth login to perform before that point. Once claimed, run the [Path 1](#path-1--delegation-oauth-via-cloudinarys-mcp-servers) authorization-code + PKCE flow; the user signs in with the password they just set and selects the product environment. You receive a scoped, short-lived bearer token and never handle the root secret. It is interactive (browser), but the user is already in a browser from the claim ceremony, so the sign-in folds naturally into the same session.
 
-**Fallback — use the returned root credentials directly.** Only when no browser is available for OAuth (e.g. a fully headless agent). Once the environment is active, authenticate with the root key/secret (HTTP Basic, or the `CLOUDINARY_URL` / SDK config):
+**Fallback — use the returned root credentials directly.** Use this when no browser is available for OAuth (e.g. a fully headless agent), or when you need direct REST API access beyond what the MCP servers expose — Path 1 tokens are MCP-only (see [Path 1, Step 5](#step-5--use-refresh-revoke)), so the root key/secret are the only way to call Cloudinary's REST APIs directly. Once the environment is active, authenticate with the root key/secret (HTTP Basic, or the `CLOUDINARY_URL` / SDK config):
 
 ```http
 POST https://api.cloudinary.com/v1_1/<cloud_name>/image/upload      # Upload API
