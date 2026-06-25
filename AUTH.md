@@ -17,6 +17,8 @@ Use this when the agent acts on behalf of a user who has, or will sign in to, a 
 
 This path is **interactive**: it requires the user to complete a browser sign-in and consent (an OAuth redirect). There is no fully headless delegation for existing accounts yet — that's the future [ID-JAG](#future--identity_assertion-id-jag) path.
 
+> **If you use an MCP-capable client** (an SDK or host like Claude or Cursor), point it at one of the server URLs below and it runs Steps 1–4 for you — discovery, client registration, the authorization-code + PKCE flow, and token exchange. The manual flow documented here is for agents that implement OAuth directly.
+
 ### Step 1 — Discover
 
 Cloudinary's remote MCP servers are OAuth 2.1 protected resources. Each publishes the standard discovery documents:
@@ -58,6 +60,7 @@ GET https://asset-management.mcp.cloudinary.com/.well-known/oauth-authorization-
   "authorization_endpoint": "https://asset-management.mcp.cloudinary.com/authorize",
   "token_endpoint": "https://asset-management.mcp.cloudinary.com/token",
   "registration_endpoint": "https://asset-management.mcp.cloudinary.com/register",
+  "userinfo_endpoint": "https://asset-management.mcp.cloudinary.com/userinfo",
   "response_types_supported": ["code"],
   "grant_types_supported": ["authorization_code", "refresh_token"],
   "code_challenge_methods_supported": ["S256", "plain"],
@@ -113,7 +116,7 @@ You receive a JWT **access token** (short-lived) and, with `offline_access`, a *
 
 ### Step 5 — Use, refresh, revoke
 
-- **Use:** present `Authorization: Bearer <access_token>`. The token works both with the MCP server you obtained it from and with Cloudinary's REST APIs — Cloudinary validates OAuth bearer tokens by introspection, so `asset_management` reaches the Admin API and `upload` reaches the Upload API at `https://api.cloudinary.com/v1_1/<cloud_name>/…`.
+- **Use:** present `Authorization: Bearer <access_token>`. The token works both with the MCP server you obtained it from and with Cloudinary's REST APIs — Cloudinary validates OAuth bearer tokens by introspection, so `asset_management` reaches the Admin API and `upload` reaches the Upload API at `https://api.cloudinary.com/v1_1/<cloud_name>/…`. For the REST sub-case you need `<cloud_name>`: read it from the `userinfo` endpoint (or the token's claims) — the user chose it at consent. MCP tool calls don't need it; the server already operates in the consented cloud.
 - **Refresh:** when the access token expires, use the `refresh_token` grant at the `token_endpoint`.
 - **Revoke:** the MCP authorization-server metadata does not currently advertise a `revocation_endpoint`. Signing the user out of Cloudinary invalidates the session behind the grant, and access tokens are short-lived so they age out quickly.
 
@@ -168,7 +171,7 @@ Response (`200`):
 }
 ```
 
-These are the product environment's **root** `api_key` / `api_secret`. **They do not work yet** — the environment is created disabled. Hold them; surface the `guidance` to the user.
+These are the product environment's **root** `api_key` / `api_secret`. **They do not work yet** — the environment is created disabled. Hold them; surface the `guidance` to the user. Treat `api_secret` as a secret — never log it or expose it in client-side code, and persist it securely (these are full-access root credentials).
 
 ### Step 2 — Claim ceremony (email verification)
 
