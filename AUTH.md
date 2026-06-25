@@ -100,7 +100,7 @@ GET https://asset-management.mcp.cloudinary.com/authorize
   &code_challenge=<S256>&code_challenge_method=S256
 ```
 
-The user signs in to Cloudinary, **consents**, and **selects the product environment (cloud)** the token will act on. The chosen cloud is bound into the token (it is not an OAuth `resource`/audience parameter — Cloudinary carries it in the token's claims).
+The user signs in to Cloudinary, **consents**, and **selects the product environment (cloud)** the token will act on.
 
 ### Step 4 — Exchange the code for a token
 
@@ -205,11 +205,13 @@ Or configure an SDK directly from `api_environment_variable`. This is less safe 
 
 ### Errors (provisioning)
 
-All errors use Cloudinary's standard envelope:
+All errors use Cloudinary's standard envelope. `category` and `message` are always present; `code` and `details` are **optional** and appear only on some errors — the validation and duplicate-email `400`s below carry just `category` + `message`:
 
 ```json
-{ "error": { "category": "...", "code": "...", "message": "...", "details": {} } }
+{ "error": { "category": "...", "message": "...", "code": "<optional>", "details": { } } }
 ```
+
+To detect the duplicate-email case (so you know to switch to Path 1), match on `400` whose `message` reports the email is already taken — observed as the string `{"email":["has already been taken"]}` — rather than a literal "already registered".
 
 | Status | `code` | What to do |
 | --- | --- | --- |
