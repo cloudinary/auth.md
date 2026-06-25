@@ -1,444 +1,228 @@
-# auth.md
+# auth.md — Cloudinary
 
-You are an agent. This service supports **agentic registration**: discover → register → (claim if needed) → exchange for an access_token → call API → handle revocation. Follow the steps in order; do not skip ahead.
+You are an agent. Cloudinary supports **agentic registration** — discover → register → (claim if needed) → use the API → handle revocation. This document tells you how to authenticate with Cloudinary on behalf of a user, whether or not that user already has a Cloudinary account.
 
-Examples use placeholder hosts: `https://api.service.example.com` (the resource server hosting the API you want to call) and `https://auth.service.example.com` (the authorization server that handles registration). Real services substitute their own.
+Cloudinary exposes **two** registration paths. Pick one with this decision tree:
 
-## Step 1 — Discover
+1. **The user already has (or will sign in to) a Cloudinary account** → **[Delegation via OAuth](#path-1--delegation-oauth-via-cloudinarys-mcp-servers)**. The user authenticates and consents in a browser; you receive a scoped, short-lived bearer token. This is the richer path and is what Cloudinary's remote MCP servers use.
+2. **The user has no Cloudinary account yet and you only have their email** → **[Provisioning via `service_auth`](#path-2--provisioning-service_auth)**. You create a new account for them; Cloudinary returns credentials that stay **inert** until the human verifies their email (the claim ceremony).
 
-Discovery is two hops — you may have already done this.
+> **Mapping to the reference protocol.** Path 1 is the protocol's interactive delegation, layered on standard OAuth discovery (RFC 9728 / RFC 8414). Path 2 is the protocol's `service_auth` identity type. The protocol's `identity_assertion` (ID-JAG) type is **not supported yet** — see [Future](#future--identity_assertion-id-jag). A "Divergences from the reference protocol" note is at the [end](#divergences-from-the-reference-protocol).
 
-The 401 response that pointed you here also carries a `WWW-Authenticate` header with the PRM URL:
+---
+
+## Path 1 — Delegation (OAuth via Cloudinary's MCP servers)
+
+Use this when the agent acts on behalf of a user who has, or will sign in to, a Cloudinary account. The human authenticates Cloudinary-side in a browser and chooses which product environment (cloud) you may act on; you get a scoped bearer token. No API key/secret ever touches the agent.
+
+### Step 1 — Discover
+
+Cloudinary's remote MCP servers are OAuth 2.1 protected resources. Each publishes the standard discovery documents:
+
+| MCP server | Endpoint |
+| --- | --- |
+| Asset management | `https://asset-management.mcp.cloudinary.com/mcp` |
+| Environment config | `https://environment-config.mcp.cloudinary.com/mcp` |
+| Structured metadata | `https://structured-metadata.mcp.cloudinary.com/mcp` |
+| Analysis | `https://analysis.mcp.cloudinary.com/sse` |
+
+Two-hop discovery (per [RFC 9728](https://datatracker.ietf.org/doc/html/rfc9728) → [RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414)):
 
 ```http
-HTTP/1.1 401 Unauthorized
-WWW-Authenticate: Bearer resource_metadata="https://api.service.example.com/.well-known/oauth-protected-resource"
+GET https://asset-management.mcp.cloudinary.com/.well-known/oauth-protected-resource
 ```
-
-Pull the `resource_metadata` value from that header and fetch it (1a). If you don't have the 401 in hand, the conventional path on the resource server is `/.well-known/oauth-protected-resource`.
-
-### 1a. Fetch the Protected Resource Metadata
-
-```http
-GET /.well-known/oauth-protected-resource
-```
-
-Response shape:
 
 ```json
 {
-  "resource": "https://api.service.example.com/",
-  "resource_name": "Service",
-  "resource_logo_uri": "https://service.example.com/logo.png",
-  "authorization_servers": ["https://auth.service.example.com/"],
-  "scopes_supported": ["api.read", "api.write"],
-  "bearer_methods_supported": ["header"]
-}
-```
-
-What each field tells you:
-
-- `resource` — the canonical URL of the API you're trying to call. Use this as the `aud` when minting an ID-JAG.
-- `resource_name` / `resource_logo_uri` — display name and logo for the service. Surface these to the user when asking for consent.
-- `authorization_servers` — base URLs of the OAuth Authorization Server(s) for this resource. The `agent_auth` block lives on one of these (see 1b).
-- `scopes_supported` — scopes the resource server understands. The access_token you receive at Step 5 will be scoped to some subset.
-- `bearer_methods_supported` — how you'll send the access_token in Step 6 (`"header"` = `Authorization: Bearer …`).
-
-### 1b. Fetch the Authorization Server metadata
-
-```http
-GET <authorization_servers[0]>/.well-known/oauth-authorization-server
-```
-
-Response shape:
-
-```json
-{
-  "resource": "https://api.service.example.com/",
-  "authorization_servers": ["https://auth.service.example.com/"],
-  "scopes_supported": ["api.read", "api.write"],
+  "resource": "https://asset-management.mcp.cloudinary.com",
+  "authorization_servers": ["https://asset-management.mcp.cloudinary.com"],
+  "scopes_supported": ["openid", "profile", "email", "offline_access", "asset_management", "upload"],
   "bearer_methods_supported": ["header"],
+  "resource_documentation": "https://asset-management.mcp.cloudinary.com/docs"
+}
+```
 
-  "issuer": "https://auth.service.example.com",
-  "token_endpoint": "https://auth.service.example.com/oauth2/token",
-  "revocation_endpoint": "https://auth.service.example.com/oauth2/revoke",
-  "grant_types_supported": [
-    "urn:ietf:params:oauth:grant-type:jwt-bearer",
-    "urn:workos:agent-auth:grant-type:claim"
+Then fetch the Authorization Server metadata from `authorization_servers[0]`:
+
+```http
+GET https://asset-management.mcp.cloudinary.com/.well-known/oauth-authorization-server
+```
+
+```json
+{
+  "issuer": "https://asset-management.mcp.cloudinary.com",
+  "authorization_endpoint": "https://asset-management.mcp.cloudinary.com/authorize",
+  "token_endpoint": "https://asset-management.mcp.cloudinary.com/token",
+  "registration_endpoint": "https://asset-management.mcp.cloudinary.com/register",
+  "response_types_supported": ["code"],
+  "grant_types_supported": ["authorization_code", "refresh_token"],
+  "code_challenge_methods_supported": ["S256", "plain"],
+  "token_endpoint_auth_methods_supported": ["client_secret_post", "client_secret_basic", "none"]
+}
+```
+
+> **Discovery note.** Fetch `/.well-known/oauth-protected-resource` directly at the resource host — it's the standardized well-known location, so it always resolves. Cloudinary's `401`s do not include the optional `WWW-Authenticate: Bearer resource_metadata="…"` pointer; [RFC 9728 §5](https://datatracker.ietf.org/doc/html/rfc9728#section-5) marks that pointer as a *MAY*, and because the documents live at the conventional path, it isn't needed to discover them.
+
+### Step 2 — Register a client (dynamic, optional)
+
+The MCP servers support [RFC 7591](https://datatracker.ietf.org/doc/html/rfc7591) Dynamic Client Registration at the `registration_endpoint`, so you can self-register without contacting Cloudinary:
+
+```http
+POST https://asset-management.mcp.cloudinary.com/register
+Content-Type: application/json
+
+{ "client_name": "<your agent>", "redirect_uris": ["<your callback>"], "token_endpoint_auth_method": "none" }
+```
+
+Public clients (`token_endpoint_auth_method: "none"`) are accepted — use PKCE.
+
+### Step 3 — Authorize (browser, with consent + cloud selection)
+
+Run a standard [OAuth 2.1 authorization-code flow with PKCE](https://datatracker.ietf.org/doc/html/rfc7636). Request the scopes you need:
+
+- `asset_management` — Admin API (manage assets + account/upload/transform/delivery settings)
+- `upload` — Upload API
+- plus `openid profile email offline_access` (the last gives you a refresh token)
+
+```http
+GET https://asset-management.mcp.cloudinary.com/authorize
+  ?response_type=code
+  &client_id=<client_id>
+  &redirect_uri=<callback>
+  &scope=openid%20email%20offline_access%20asset_management%20upload
+  &code_challenge=<S256>&code_challenge_method=S256
+```
+
+The user signs in to Cloudinary, **consents**, and **selects the product environment (cloud)** the token will act on. The chosen cloud is bound into the token (it is not an OAuth `resource`/audience parameter — Cloudinary carries it in the token's claims).
+
+### Step 4 — Exchange the code for a token
+
+```http
+POST https://asset-management.mcp.cloudinary.com/token
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=authorization_code&code=<code>&redirect_uri=<callback>
+&client_id=<client_id>&code_verifier=<verifier>
+```
+
+You receive a JWT **access token** (short-lived) and, with `offline_access`, a **refresh token** (long-lived).
+
+### Step 5 — Use, refresh, revoke
+
+- **Use:** send `Authorization: Bearer <access_token>` to the MCP server (or to the Cloudinary API the token is scoped for).
+- **Refresh:** when the access token expires, use the `refresh_token` grant at the `token_endpoint`.
+- **Revoke:** the MCP authorization-server metadata does not currently advertise a `revocation_endpoint`. Signing the user out of Cloudinary invalidates the session behind the grant, and access tokens are short-lived so they age out quickly.
+
+---
+
+## Path 2 — Provisioning (`service_auth`)
+
+Use this when the user does **not** have a Cloudinary account and you have their email. You create a new Free-plan account for them. The credentials Cloudinary returns are **inert** until the human verifies the email — that verification is the claim ceremony.
+
+### Step 1 — Register
+
+`POST` the agent account-creation endpoint. **No authentication is required** to call it.
+
+```http
+POST https://api.cloudinary.com/v1_1/provisioning/agents/accounts
+Content-Type: application/json
+
+{
+  "email": "user@example.com",
+  "agent_framework": "<framework, e.g. langchain>",
+  "agent_llm_model": "<model & version>",
+  "agent_goal": "<why the account is being created>",
+  "sdk_framework": "<optional, e.g. node>"
+}
+```
+
+| Field | Required | Notes |
+| --- | --- | --- |
+| `email` | yes | The human you're acting for. Account, derived account name, and verification target. |
+| `agent_framework` | yes | 2–100 chars. |
+| `agent_llm_model` | yes | 2–100 chars. |
+| `agent_goal` | yes | 2–300 chars. |
+| `sdk_framework` | no | 2–100 chars; tailors the `guidance` block. |
+
+Response (`200`):
+
+```json
+{
+  "external_id": "<account external id>",
+  "email": "user@example.com",
+  "plan_name": "Free",
+  "product_environments": [
+    {
+      "external_id": "<env external id>",
+      "cloud_name": "<cloud>",
+      "api_key": "<api key>",
+      "api_secret": "<api secret>",
+      "api_environment_variable": "CLOUDINARY_URL=cloudinary://<api_key>:<api_secret>@<cloud>"
+    }
   ],
-
-  "agent_auth": {
-    "skill": "https://service.example.com/auth.md",
-    "identity_endpoint": "https://auth.service.example.com/agent/identity",
-    "claim_endpoint": "https://auth.service.example.com/agent/identity/claim",
-    "events_endpoint": "https://auth.service.example.com/agent/event/notify",
-    "identity_types_supported": ["anonymous", "identity_assertion", "service_auth"],
-    "identity_assertion": {
-      "assertion_types_supported": [
-        "urn:ietf:params:oauth:token-type:id-jag"
-      ]
-    },
-    "events_supported": [
-      "https://schemas.workos.com/events/agent/auth/identity/assertion/revoked"
-    ]
-  }
+  "guidance": "<human/agent-readable next steps>"
 }
 ```
 
-The outer fields restate the PRM. The top-level OAuth endpoints (`issuer`, `token_endpoint`, `revocation_endpoint`, `grant_types_supported`) are standard [RFC 8414](https://datatracker.ietf.org/doc/html/rfc8414) / [RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009) / [RFC 7523](https://datatracker.ietf.org/doc/html/rfc7523) fields. The `agent_auth` block is the profile-specific bootstrap surface — read it in full. Every field is relevant:
+These are the product environment's **root** `api_key` / `api_secret`. **They do not work yet** — the environment is created disabled. Hold them; surface the `guidance` to the user.
 
-- `issuer` — the canonical issuer URL of this authorization server. Validate the `iss` claim of any token the AS signs against this.
-- `token_endpoint` — where you exchange a service-signed identity assertion for an access_token (Step 5).
-- `revocation_endpoint` — where you POST to revoke an access_token ([RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009)).
-- `grant_types_supported` — lists the grant types accepted at `/oauth2/token`. `urn:ietf:params:oauth:grant-type:jwt-bearer` ([RFC 7523](https://datatracker.ietf.org/doc/html/rfc7523)) is for exchanging your identity_assertion for an access_token (Step 5). `urn:workos:agent-auth:grant-type:claim` is the polling grant for the claim ceremony (Step 4c) — a profile-specific URN so it doesn't collide with services that also implement standard RFC 8628 device authorization at the same endpoint.
-- `agent_auth.skill` — the URL of this document.
-- `agent_auth.identity_endpoint` — where you POST to register (Step 3).
-- `agent_auth.claim_endpoint` — where you POST the claim invite for anonymous registrations (Step 4) and where the agent polls for ceremony completion at `/view`.
-- `agent_auth.events_endpoint` — where the provider POSTs a [Security Event Token (RFC 8417)](https://datatracker.ietf.org/doc/html/rfc8417) per [RFC 8935](https://datatracker.ietf.org/doc/html/rfc8935) push delivery to notify the service of upstream identity events. You don't call this; it tells you what to expect.
-- `agent_auth.identity_types_supported` — which registration methods this service accepts. Pick yours from Step 2.
-- `agent_auth.identity_assertion.assertion_types_supported` — which assertion types this service accepts under the `identity_assertion` shape (currently ID-JAG).
-- `agent_auth.events_supported` — event schemas this service can ingest (currently revocation). Informational; you don't act on these directly.
+### Step 2 — Claim ceremony (email verification)
 
-## Step 2 — Pick a method
+Cloudinary emails the human a verification link. Direct the user to:
 
-Use this decision tree:
+1. Open the email Cloudinary sent to the address you supplied.
+2. Click the verification link, **set a password**, and confirm.
 
-1. **You have a session tied to a user identity and can exchange it for an ID-JAG, audience-bound to this service** → [identity_assertion + id-jag](#identity_assertion--id-jag).
-2. **You have only the user's email** → [service_auth](#service_auth). Claim ceremony required.
-3. **You have neither** → [anonymous](#anonymous). Claim ceremony optional; deferred until the user wants to take ownership.
+That completes the claim: Cloudinary marks the email verified and **activates** the product environment, flipping the returned credentials from inert to live. The link expires in ~24 hours.
 
-For `identity_assertion`, check that your assertion type is in `agent_auth.identity_assertion.assertion_types_supported`, if not listed then stop. For `service_auth` and `anonymous`, `identity_types_supported` is informational — send the body and fall back on the `*_not_enabled` error if the service opted out.
+> There is **no agent-pollable completion signal** for this step. Cloudinary does not return a `user_code`, a `verification_uri` you poll, or a status endpoint. Instead, **retry a real API call** (Step 3) until it succeeds — that's how you learn activation completed. Back off between attempts.
 
-## Step 3 — Register
+### Step 3 — Use the credentials
 
-Before sending an `identity_assertion` or `service_auth` body, surface the service's `resource_name` and `resource_logo_uri` (from Step 1a) and the scope set you'll be acting under, and confirm with the user. This is the user's only consent gate before their identity is asserted to the service. Skip this for `anonymous` — there is no user identity to assert.
-
-### identity_assertion + id-jag
-
-Before minting the ID-JAG, confirm your provider is on this service's trust list (publishing format is service-specific — check the AS metadata or service docs). If it isn't, fall back to `service_auth` or `anonymous`.
-
-Mint the assertion with:
-
-- `aud` = the `resource` from the PRM
-- `iss` = your provider's issuer URL (must be on the trust list above)
-- `email_verified: true` OR `phone_number_verified: true`
-- Fresh `jti`
-- Near-term `exp` (~5 minutes)
-- `auth_time` — epoch seconds when the user last authenticated at your provider. **Required.** The service rejects ID-JAGs whose underlying user authentication is older than its `idJagMaxAuthAgeSeconds` window.
+Once active, authenticate with the root key/secret (HTTP Basic, or the `CLOUDINARY_URL` / SDK config):
 
 ```http
-POST /agent/identity
-Content-Type: application/json
-
-{
-  "type": "identity_assertion",
-  "assertion_type": "urn:ietf:params:oauth:token-type:id-jag",
-  "assertion": "<your ID-JAG JWT>"
-}
+POST https://api.cloudinary.com/v1_1/<cloud_name>/image/upload      # Upload API
+GET  https://api.cloudinary.com/v1_1/<cloud_name>/resources/image   # Admin API
+Authorization: Basic base64(<api_key>:<api_secret>)
 ```
 
-The response has two shapes depending on whether the service already has a delegation on file for `(iss, sub)`.
+Or configure an SDK directly from `api_environment_variable`. Full API reference: <https://cloudinary.com/documentation>.
 
-**No confirmation needed** — `(iss, sub)` is known, or the service JIT-provisioned a fresh user (no email/phone collision with existing accounts):
+### Step 4 — Revoke
+
+There is no token to revoke on this path. To cut off access, the human rotates the API key/secret or disables the product environment in the Cloudinary Console.
+
+### Errors (provisioning)
+
+All errors use Cloudinary's standard envelope:
 
 ```json
-{
-  "registration_id": "reg_...",
-  "registration_type": "identity_assertion",
-  "identity_assertion": "<service-signed JWT>",
-  "assertion_expires": "2026-05-04T13:00:00.000Z",
-  "scopes": ["api.read", "api.write"]
-}
+{ "error": { "category": "...", "code": "...", "message": "...", "details": {} } }
 ```
 
-Keep `identity_assertion` and go to [Step 5](#step-5--exchange-the-assertion).
+| Status | `code` | What to do |
+| --- | --- | --- |
+| 400 | *(validation message)* | Missing/oversized `email` or agent metadata, or invalid UTF-8. Fix the body. |
+| 403 | `agent_registration_disabled` | Agent signup is temporarily off. Do not retry tightly; fall back to asking the human to sign up. |
+| 403 | `geo_location_not_permitted` | Requests from your region are not allowed. |
+| 403 | *(none — "Invalid request")* | Request blocked (e.g. IP gating). Do not probe. |
+| 429 | `ip_rate_limit_exceeded` | Per-IP signup cap (default 10/day). Back off and retry later. |
+| 5xx | *(generic)* | Transient server error. Exponential backoff, then retry. |
 
-**Confirmation required (401)** — `(iss, sub)` is unknown but the ID-JAG's verified email or phone matched an existing account at the service. The service won't silently bind the delegation — the user has to confirm linking the provider identity to their account.
+---
 
-```http
-HTTP/1.1 401 Unauthorized
-WWW-Authenticate: AgentAuth error="interaction_required", error_description="…"
+## Future — `identity_assertion` (ID-JAG)
 
-{
-  "error": "interaction_required",
-  "error_description": "…",
-  "registration_id": "reg_...",
-  "registration_type": "identity_assertion",
-  "claim_url": "https://auth.service.example.com/agent/identity/claim",
-  "claim_token": "clm_...",
-  "claim_token_expires": "…",
-  "post_claim_scopes": ["api.read", "api.write"],
-  "claim": {
-    "user_code": "123456",
-    "expires_in": 600,
-    "verification_uri": "https://auth.service.example.com/login?return_to=%2Fclaim%3Fclaim_attempt_token%3D...",
-    "interval": 5
-  }
-}
-```
+The reference protocol's third type, `identity_assertion` ([ID-JAG](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-identity-assertion-authz-grant)), lets a **trusted agent provider** mint a signed assertion of the user's identity so the agent can register **headlessly** (no browser) on behalf of an already-authenticated user. Cloudinary does **not** accept ID-JAGs today — there is no provider trust list and no inbound assertion-verification surface. Until it ships, use Path 1 (interactive OAuth) for delegation, or Path 2 (`service_auth`) when there's no account yet.
 
-Same `claim` block as the `service_auth` registration response — the user signs in to the service, sees a confirmation page that names your provider ("**Acme Provider** is asking to link this account so the agent it runs can act on your behalf"), and types the `user_code` to confirm. Surface `verification_uri` + `user_code` to the user (see [Step 4b](#4b-hand-off-to-the-user)) and poll the token endpoint (see [Step 4c](#4c-poll-for-completion)).
+---
 
-After the user confirms, the next presentation of an ID-JAG for the same `(iss, sub, aud)` is accepted directly — no confirmation needed.
+## Divergences from the reference protocol
 
-**Login required (401)** — `auth_time` is missing or older than the service's max-age. The agent has to go back to its own provider, get the user to re-authenticate there (e.g., `prompt=login` on the provider's auth endpoint), and re-mint a fresh ID-JAG. This is distinct from the confirmation case above: nothing the user does at the service helps; the freshness has to be established upstream.
+Cloudinary follows the protocol's shape but differs in mechanics on the provisioning path — called out so you don't expect protocol-exact behavior:
 
-```http
-HTTP/1.1 401 Unauthorized
-WWW-Authenticate: AgentAuth error="login_required", max_age="3600", error_description="…"
-
-{
-  "error": "login_required",
-  "error_description": "auth_time is …s old; max allowed is 3600s. Re-authenticate at the provider and request a fresh ID-JAG.",
-  "max_age": 3600
-}
-```
-
-### service_auth
-
-```http
-POST /agent/identity
-Content-Type: application/json
-
-{
-  "type": "service_auth",
-  "login_hint": "user@example.com"
-}
-```
-
-Response (200):
-
-```json
-{
-  "registration_id": "reg_...",
-  "registration_type": "service_auth",
-  "claim_url": "https://auth.service.example.com/agent/identity/claim",
-  "claim_token": "clm_...",
-  "claim_token_expires": "2026-05-21T17:31:25.994Z",
-  "post_claim_scopes": ["api.read", "api.write"],
-  "claim": {
-    "user_code": "123456",
-    "expires_in": 600,
-    "verification_uri": "https://auth.service.example.com/login?return_to=%2Fclaim%3Fclaim_attempt_token%3D...",
-    "interval": 5
-  }
-}
-```
-
-No `identity_assertion` yet — the claim ceremony is bundled into the registration response. Its shape borrows from [RFC 8628 device-authorization](https://datatracker.ietf.org/doc/html/rfc8628) (`user_code`, `verification_uri`, `expires_in`, `interval`) with a `claim_attempt_token` binding parameter embedded in `verification_uri` so the URL identifies the registration without leaking the user-typed `user_code`. The agent surfaces `claim.verification_uri` and `claim.user_code` to the user, and polls the `token_endpoint` from AS metadata with a profile-specific grant until the ceremony completes (see [Step 4](#step-4--claim-ceremony)). `claim_token` is returned exactly once — hold it in memory for the duration of the ceremony; do not persist it past Step 4.
-
-### anonymous
-
-```http
-POST /agent/identity
-Content-Type: application/json
-
-{ "type": "anonymous" }
-```
-
-Response (200):
-
-```json
-{
-  "registration_id": "reg_...",
-  "registration_type": "anonymous",
-  "identity_assertion": "<service-signed JWT>",
-  "assertion_expires": "2026-05-04T13:00:00.000Z",
-  "pre_claim_scopes": ["api.read"],
-  "claim_url": "https://auth.service.example.com/agent/identity/claim",
-  "claim_token": "clm_...",
-  "claim_token_expires": "2026-05-21T17:26:32.915Z",
-  "post_claim_scopes": ["api.read", "api.write"]
-}
-```
-
-The `identity_assertion` exchanges at `/oauth2/token` for an access_token with `pre_claim_scopes` immediately. If you also want a human to take ownership and unlock `post_claim_scopes`, go to [Step 4](#step-4--claim-ceremony). Otherwise skip to [Step 5](#step-5--exchange-the-assertion). `claim_token` is returned exactly once — hold it in memory for the duration of the ceremony; do not persist it past Step 4.
-
-## Step 4 — Claim ceremony
-
-The end goal: get a signed-in user to confirm a 6-digit `user_code` **you supply them**. The code travels from you → user, not from the service → user; the user authenticates to the service and types the code into a page the service owns. This binds the agent's context to the user's authenticated session at the service. The ceremony fields (`user_code`, `verification_uri`, `expires_in`, `interval`) borrow their shape from [RFC 8628 device authorization](https://datatracker.ietf.org/doc/html/rfc8628), and polling happens at the standard `token_endpoint` with a profile-specific grant.
-
-### 4a. Get the ceremony materials
-
-For **service_auth** registrations, you already have them — they're in the `claim` block of the Step 3 response. Skip to 4b.
-
-For **anonymous** registrations, ask the service to start a ceremony:
-
-```http
-POST /agent/identity/claim
-Content-Type: application/json
-
-{
-  "claim_token": "clm_...",
-  "email": "user@example.com"
-}
-```
-
-Response (200):
-
-```json
-{
-  "registration_id": "reg_...",
-  "claim_attempt_id": "cla_...",
-  "status": "initiated",
-  "expires_at": "2026-05-21T17:31:25.994Z",
-  "claim_attempt": {
-    "user_code": "123456",
-    "expires_in": 600,
-    "verification_uri": "https://auth.service.example.com/login?return_to=%2Fclaim%3Fclaim_attempt_token%3D...",
-    "interval": 5
-  }
-}
-```
-
-The `claim_attempt` block here — same shape as the `claim` block in the `service_auth` registration response — borrows from [RFC 8628 device-authorization](https://datatracker.ietf.org/doc/html/rfc8628), with `claim_attempt_token` embedded in `verification_uri` so the URL identifies the registration without leaking the user-typed `user_code`. Surface `verification_uri` + `user_code` to the user; poll the standard `token_endpoint` from AS metadata with the claim grant (see 4c).
-
-The `email` you supply on anonymous `/claim` binds the registration to the human you intend the agent to act on behalf of — only that signed-in user can complete the ceremony. Without this, a third party who intercepted the `user_code` could claim the agent for themselves.
-
-### 4b. Hand off to the user
-
-Surface `verification_uri` and `user_code` to the user in a single message. Suggested copy:
-
-> Open this link, sign in (or sign up), and enter this 6-digit code: **123456**
-> https://auth.service.example.com/login?return_to=...
-
-Be explicit that the code goes into the page they land on after signing in — not back to you. The user will:
-
-1. Open `verification_uri`.
-2. Authenticate with the service (existing user → sign in; new user → sign up and verify email, depending on the service).
-3. Land on the claim page, see "you're signed in as <email>", type the `user_code`, and submit.
-
-### 4c. Poll for completion
-
-Poll the standard `token_endpoint` (from AS metadata) with the profile-specific claim grant, passing your `claim_token`:
-
-```http
-POST /oauth2/token
-Content-Type: application/x-www-form-urlencoded
-
-grant_type=urn:workos:agent-auth:grant-type:claim
-&claim_token=<clm_...>
-```
-
-Why a profile-specific grant URN (and not `urn:ietf:params:oauth:grant-type:device_code` directly)? So this surface doesn't collide with a service that also implements standard RFC 8628 device authorization at the same token endpoint — the AS routes by grant_type, no risk of a claim_token being looked up in a device-auth store or vice versa.
-
-Response while waiting (RFC 8628 §3.5 vocabulary):
-
-```json
-{ "error": "authorization_pending", "error_description": "..." }
-```
-
-Response on success: a standard OAuth token response, plus an `identity_assertion` extension so you have a refresh path via the JWT-bearer grant once this access_token expires.
-
-```json
-{
-  "access_token": "<post-claim access_token>",
-  "token_type": "Bearer",
-  "expires_in": 3600,
-  "scope": "api.read api.write",
-  "identity_assertion": "<service-signed JWT>",
-  "assertion_expires": "2026-05-21T18:31:25.994Z"
-}
-```
-
-Use `access_token` immediately on `/api/resource`; cache `identity_assertion` for the eventual refresh.
-
-For **anonymous** flows, completion of the ceremony **revokes** any pre-claim access_tokens you held. Use the post-claim access_token from this response; drop the pre-claim one. The pre-claim `identity_assertion` (v1) also gets superseded by the v2 returned here — the v2 carries the user's email/email_verified claims, the v1 didn't.
-
-If the `user_code` window passes without the user finishing:
-
-```json
-{ "error": "expired_token", "error_description": "..." }
-```
-
-Two cases distinguish what to do next:
-
-- **Registration is still active** (most common — the user_code's 10-minute timer expired but the outer claim window is still open): call `POST /agent/identity/claim` with the same `claim_token` and the same `email` to mint a fresh `claim_attempt` block. Surface the new `user_code` and `verification_uri` to the user and resume polling. This works for both anonymous and service_auth registrations.
-- **Registration itself has expired** (the outer claim window — typically 24h — has closed): start over at Step 3.
-
-If you can't tell which it is from context, try re-initiating first; the claim endpoint returns `410 claim_expired` if the registration is gone, at which point you restart at Step 3.
-
-Honor `interval` (in seconds); on `slow_down` back off. The next poll after `expires_in` will return `expired_token`.
-
-## Step 5 — Exchange the assertion
-
-POST the `identity_assertion` to the AS metadata's `token_endpoint` with the [RFC 7523](https://datatracker.ietf.org/doc/html/rfc7523) JWT-bearer grant. The `resource` parameter is optional but recommended — it pins the access_token to the API you're calling.
-
-```http
-POST /oauth2/token
-Content-Type: application/x-www-form-urlencoded
-
-grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer
-&assertion=<identity_assertion>
-&resource=https://api.service.example.com/
-```
-
-Response (200):
-
-```json
-{
-  "access_token": "<token>",
-  "token_type": "Bearer",
-  "expires_in": 3600,
-  "scope": "api.read api.write"
-}
-```
-
-Extract `access_token` and go to [Step 6](#step-6--use-the-access_token). The same `identity_assertion` can be re-used to mint additional access_tokens until it expires.
-
-If `/oauth2/token` returns `invalid_grant`, your `identity_assertion` is expired or revoked. Restart the flow at [Step 3](#step-3--register) to mint a fresh identity assertion.
-
-## Step 6 — Use the access_token
-
-Present the `access_token` as a bearer token:
-
-```http
-GET /api/some-resource
-Authorization: Bearer <access_token>
-```
-
-**Refresh.** When the access_token expires (`expires_in` seconds after issuance), re-call [Step 5](#step-5--exchange-the-assertion) with the same `identity_assertion`. When the identity assertion itself expires or `/oauth2/token` returns `invalid_grant`, restart at [Step 3](#step-3--register). There is no OAuth refresh_token in this flow — the two-step pattern replaces it.
-
-If you get a 401 on a previously-working access_token: try [Step 5](#step-5--exchange-the-assertion) once with the current assertion. If that also fails, discard the expired identity assertion, and restart at [Step 1](#step-1--discover).
-
-Full API reference: `https://docs.service.example.com/`.
-
-## Errors
-
-Errors at `/agent/identity` and `/agent/identity/claim/*` use profile-specific codes (the registration ceremonies have no OAuth analog). Errors at `/oauth2/token` use OAuth-standard vocabulary per [RFC 6749](https://datatracker.ietf.org/doc/html/rfc6749) / [RFC 7523](https://datatracker.ietf.org/doc/html/rfc7523).
-
-| Code                         | Where                         | What to do                                                                                                                                                                             |
-| ---------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `anonymous_not_enabled`      | `/agent/identity`             | This service doesn't accept anonymous. Pick another method from Step 2.                                                                                                                |
-| `service_auth_not_enabled`   | `/agent/identity`             | service_auth (email-based) disabled here. Pick another method.                                                                                                                         |
-| `issuer_not_enabled`         | `/agent/identity`             | Provider not on this service's trust list. Pick another method.                                                                                                                        |
-| `invalid_request`            | `/agent/identity`             | Body shape, missing claims, ID-JAG signature/`jti`/`aud` problems, or unverified identity. Fix the input (mint a fresh ID-JAG if signature/`jti`/`aud`/`exp`-related).                 |
-| `interaction_required` (401) | `/agent/identity` (ID-JAG)    | Step-up: ID-JAG matched an existing account but no `(iss, sub)` delegation yet. Body carries a `claim` block; surface it to the user (see [Step 4](#step-4--claim-ceremony)).          |
-| `login_required` (401)       | `/agent/identity` (ID-JAG)    | `auth_time` missing or older than `max_age`. Re-authenticate the user at your provider (`prompt=login` or equivalent) and mint a fresh ID-JAG. The service can't help here.            |
-| `invalid_claim_token`        | `/agent/identity/claim`       | `claim_token` wrong or expired. Restart at Step 3.                                                                                                                                     |
-| `claimed_or_in_flight`       | `/agent/identity/claim`       | Wrong endpoint for this registration kind, or already claimed. Re-read the Step 3 response and follow Step 4.                                                                          |
-| `claim_expired`              | `/agent/identity/claim`       | The registration expired before the user finished. Restart at Step 3.                                                                                                                  |
-| `invalid_grant`              | `/oauth2/token`               | Assertion expired, revoked, replayed, or otherwise failed verification. Restart at [Step 3](#step-3--register) to mint a fresh one.                                                    |
-| `invalid_client`             | `/oauth2/token`               | `client_id` not recognized. Re-read AS metadata.                                                                                                                                       |
-| `unsupported_grant_type`     | `/oauth2/token`               | `grant_type` is not one of the two supported values (`urn:ietf:params:oauth:grant-type:jwt-bearer` for token exchange, `urn:workos:agent-auth:grant-type:claim` for ceremony polling). |
-| `authorization_pending`      | `/oauth2/token` (claim grant) | User hasn't completed the ceremony yet. Honor `interval` from the `claim` or `claim_attempt` block; retry.                                                                             |
-| `expired_token`              | `/oauth2/token` (claim grant) | `user_code` window or outer claim window has closed. Re-call `/agent/identity/claim` to mint a fresh user_code; if that returns `claim_expired`, restart at Step 3.                    |
-| `slow_down`                  | `/oauth2/token` (claim grant) | Polling too fast. Add at least 5s to your `interval` and retry.                                                                                                                        |
-| `rate_limited` (429)         | any                           | Back off and retry.                                                                                                                                                                    |
-
-`user_code` errors are surfaced to the user on the claim page — they never reach you. Your poll keeps returning `"status": "pending"` until either the user gets the code right or the window expires (`"status": "expired"`).
-
-Retry policy:
-
-- 5xx → exponential backoff, retry the same request.
-- 4xx → do not retry the same payload; act on the table above.
-- 401 on a previously-working access_token → retry [Step 5](#step-5--exchange-the-assertion) once with the current assertion. If that fails, restart at [Step 1](#step-1--discover).
-
-## Revocation
-
-Two independent layers can kill what you're holding:
-
-- **Credential layer ([RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009), `revocation_endpoint`)** — agent-callable. POST `token=<access_token>&token_type_hint=access_token` (form-encoded) to the top-level `revocation_endpoint` to kill one access_token. 200 on success, idempotent. Your `identity_assertion` is intact; re-run [Step 5](#step-5--exchange-the-assertion) to mint a fresh access_token.
-- **Registration layer ([RFC 8935](https://datatracker.ietf.org/doc/html/rfc8935) Security Event Token delivery, `agent_auth.events_endpoint`)** — provider-driven. The provider that minted your ID-JAG can POST a [SET (RFC 8417)](https://datatracker.ietf.org/doc/html/rfc8417) (`Content-Type: application/secevent+jwt`) to this service's `events_endpoint`. The service invalidates the identity assertion and every access_token derived from it. You don't call this; you discover it the next time `/oauth2/token` returns `invalid_grant` — restart at [Step 3](#step-3--register).
-
-On a 401 for a previously-working access_token: try [Step 5](#step-5--exchange-the-assertion) once. If `/oauth2/token` succeeds, the credential was revoked at the credential layer and your fresh access_token works. If `/oauth2/token` returns `invalid_grant`, the registration was killed at the registration layer — restart at [Step 3](#step-3--register).
+1. **Credential type.** Path 2 returns an **API key/secret** (HTTP Basic), not a bearer token. (Path 1 is bearer-token, as the protocol expects.)
+2. **Claim mechanism.** The claim ceremony is an **email-verification link**, not the device-style `user_code` + `verification_uri` + poll grant.
+3. **Credential timing.** Provisioning credentials are **returned immediately but inert**, then activated by verification — the protocol's `service_auth` withholds the credential until the ceremony completes. Same security property (nothing works until the human verifies), different timing.
+4. **No completion signal.** There's no poll endpoint for the claim; you retry the API to detect activation.

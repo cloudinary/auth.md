@@ -9,17 +9,24 @@ export const config = Object.freeze({
   resource: `${baseUrl}/api/`,
   prmUrl: `${baseUrl}/.well-known/oauth-protected-resource`,
   /**
-   * Trusted issuer list for ID-JAGs. The `displayName` is what users see on
-   * the step-up confirmation page ("Cursor is asking to link this account…")
-   * — service-controlled so a provider can't set its own marketing copy. In
-   * production this would typically come from CIMD (Client ID Metadata
-   * Document, RFC draft) with the service still gating which `client_name`
-   * values it renders.
+   * Trusted issuer list for ID-JAGs (the `identity_assertion` type). Empty
+   * today: Cloudinary does not yet accept provider-minted ID-JAGs, so there
+   * are no trusted agent providers to list. This is the (future) inbound-
+   * federation trust list — each entry would carry a service-controlled
+   * `displayName` rendered on the step-up confirmation page, typically
+   * sourced from CIMD (Client ID Metadata Document, RFC draft).
    */
-  trustedIssuers: [{ iss: providerUrl, displayName: "Agent Provider" }],
-  scopesSupported: ["api.read", "api.write"],
-  preClaimScopes: ["api.read"],
-  postClaimScopes: ["api.read", "api.write"],
+  trustedIssuers: [] as { iss: string; displayName: string }[],
+  /** Cloudinary OAuth scopes: asset management (Admin API) and upload. */
+  scopesSupported: ["asset_management", "upload"],
+  /**
+   * Scope an unclaimed registration's access_token gets before the human
+   * verifies. Illustrative reduced scope so the anonymous demo track stays
+   * runnable; on Cloudinary's real provisioning path the returned root
+   * credentials are fully INERT until email verification, not merely reduced.
+   */
+  preClaimScopes: ["upload"],
+  postClaimScopes: ["asset_management", "upload"],
   accessTokenTtlSeconds: 3600,
   /**
    * Lifetime of service-signed identity_assertions returned by /agent/identity.

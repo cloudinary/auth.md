@@ -7,7 +7,7 @@ apiRouter.get("/api/resource", requireCredential, (req, res) => {
   const user = req.user;
   const credential = req.credential!;
   res.json({
-    message: "Success — credential accepted.",
+    message: "Success — credential accepted. (Demo stand-in for the Cloudinary API.)",
     user: user
       ? {
           id: user.id,
