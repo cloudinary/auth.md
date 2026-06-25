@@ -124,7 +124,7 @@ You receive a JWT **access token** (short-lived) and, with `offline_access`, a *
 
 ## Path 2 — Provisioning (`service_auth`)
 
-Use this when the user does **not** have a Cloudinary account and you have their email. You create a new Free-plan account for them. The credentials Cloudinary returns are **inert** until the human verifies the email — that verification is the claim ceremony.
+Use this when the user does **not** have a Cloudinary account and you have their email. This path **bootstraps and claims an account**; it does not, by itself, have to be how you make API calls. **Once the human has completed the claim (Step 2)** — and not before — the recommended way to act on the account is **[Path 1](#path-1--delegation-oauth-via-cloudinarys-mcp-servers)** (OAuth delegation): short-lived, scoped tokens, with no root secret ever held by the agent. Until the claim completes there is no Cloudinary login to delegate, so Path 1 is not available; the root credentials provisioning returns are a documented fallback, not the default.
 
 ### Step 1 — Register
 
@@ -171,7 +171,7 @@ Response (`200`):
 }
 ```
 
-These are the product environment's **root** `api_key` / `api_secret`. **They do not work yet** — the environment is created disabled. Hold them; surface the `guidance` to the user. Treat `api_secret` as a secret — never log it or expose it in client-side code, and persist it securely (these are full-access root credentials).
+These are the product environment's **root** `api_key` / `api_secret`. **They do not work yet** — the environment is created disabled. You generally do **not** need to store them: prefer the OAuth hand-off in Step 3. If you do retain them for the fallback path, treat `api_secret` as a full-access root secret — never log it or expose it in client-side code, and persist it securely. Surface the `guidance` to the user either way.
 
 ### Step 2 — Claim ceremony (email verification)
 
@@ -180,13 +180,13 @@ Cloudinary emails the human a verification link. Direct the user to:
 1. Open the email Cloudinary sent to the address you supplied.
 2. Click the verification link, **set a password**, and confirm.
 
-That completes the claim: Cloudinary marks the email verified and **activates** the product environment, flipping the returned credentials from inert to live. The link expires in ~24 hours.
+That completes the claim: Cloudinary marks the email verified and **activates** the product environment. After this, the human has a normal Cloudinary account with a password — which is exactly what Path 1 (delegation) needs. The link expires in ~24 hours.
 
-> There is **no agent-pollable completion signal** for this step. Cloudinary does not return a `user_code`, a `verification_uri` you poll, or a status endpoint. Instead, **retry a real API call** (Step 3) until it succeeds — that's how you learn activation completed. Back off between attempts.
+### Step 3 — Get API access
 
-### Step 3 — Use the credentials
+**Preferred — switch to delegation (Path 1).** This becomes available **only after the claim in Step 2 is complete** — the user has verified their email and set a password, which is the login Path 1 delegates against. There is no OAuth login to perform before that point. Once claimed, run the [Path 1](#path-1--delegation-oauth-via-cloudinarys-mcp-servers) authorization-code + PKCE flow; the user signs in with the password they just set and selects the product environment. You receive a scoped, short-lived bearer token and never handle the root secret. It is interactive (browser), but the user is already in a browser from the claim ceremony, so the sign-in folds naturally into the same session.
 
-Once active, authenticate with the root key/secret (HTTP Basic, or the `CLOUDINARY_URL` / SDK config):
+**Fallback — use the returned root credentials directly.** Only when no browser is available for OAuth (e.g. a fully headless agent). Once the environment is active, authenticate with the root key/secret (HTTP Basic, or the `CLOUDINARY_URL` / SDK config):
 
 ```http
 POST https://api.cloudinary.com/v1_1/<cloud_name>/image/upload      # Upload API
@@ -194,11 +194,14 @@ GET  https://api.cloudinary.com/v1_1/<cloud_name>/resources/image   # Admin API
 Authorization: Basic base64(<api_key>:<api_secret>)
 ```
 
-Or configure an SDK directly from `api_environment_variable`. Full API reference: <https://cloudinary.com/documentation>.
+Or configure an SDK directly from `api_environment_variable`. This is less safe than delegation: the root key/secret are **full-access** and long-lived, so the leak blast radius is the entire product environment. Prefer Path 1 whenever a browser is reachable. Full API reference: <https://cloudinary.com/documentation>.
+
+> **Detecting activation (fallback path only).** There is **no agent-pollable completion signal** for the claim — Cloudinary returns no `user_code`, `verification_uri` to poll, or status endpoint. To learn that activation completed, **retry a real API call** until it succeeds, backing off between attempts. (On the preferred path, the user completing OAuth sign-in is itself the signal.)
 
 ### Step 4 — Revoke
 
-There is no token to revoke on this path. To cut off access, the human rotates the API key/secret or disables the product environment in the Cloudinary Console.
+- If you took the **Path 1** hand-off, revoke per [Path 1, Step 5](#step-5--use-refresh-revoke) (sign the user out; tokens are short-lived).
+- If you used the **root credentials** directly, there is no token to revoke — the human rotates the API key/secret or disables the product environment in the Cloudinary Console.
 
 ### Errors (provisioning)
 
