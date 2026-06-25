@@ -216,6 +216,8 @@ All errors use Cloudinary's standard envelope:
 
 The reference protocol's third type, `identity_assertion` ([ID-JAG](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-identity-assertion-authz-grant)), lets a **trusted agent provider** mint a signed assertion of the user's identity so the agent can register **headlessly** (no browser) on behalf of an already-authenticated user. Cloudinary does **not** accept ID-JAGs today — there is no provider trust list and no inbound assertion-verification surface. Until it ships, use Path 1 (interactive OAuth) for delegation, or Path 2 (`service_auth`) when there's no account yet.
 
+An open design question specific to this headless path: a Cloudinary account can have multiple **product environments (clouds)**, and a credential acts on exactly one. The interactive OAuth path (Path 1) resolves this at the consent screen, where the user picks a cloud; a browserless ID-JAG flow has no such step, so it would need a policy for selecting the product environment (e.g. a default cloud, the user's sole cloud, or an explicit selection step). This does not affect Path 1 or Path 2.
+
 ---
 
 ## Divergences from the reference protocol
