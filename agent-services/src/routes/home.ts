@@ -14,14 +14,14 @@ function renderHtml(): string {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Agent Auth Consumer — Interactive Demo</title>
+<title>Cloudinary — Agent Registration Demo</title>
 <style>
   :root {
-    --brand-primary: #6D6DF2;
-    --brand-primary-hover: #5252D9;
+    --brand-primary: #3448C5;
+    --brand-primary-hover: #2A3AA0;
     --brand-success: #3FF1C7;
     --brand-success-hover: #2DD8AF;
-    --brand-text: #030527;
+    --brand-text: #0B0E2C;
     --brand-bg: #FFFFFF;
     --track-email: #f6b93b;
     --track-email-hover: #e0a52e;
@@ -31,8 +31,8 @@ function renderHtml(): string {
     --muted-2: rgba(3, 5, 39, .5);
     --border: rgba(3, 5, 39, .12);
     --surface-soft: rgba(3, 5, 39, .04);
-    --note-bg: rgba(109, 109, 242, .08);
-    --note-border: rgba(109, 109, 242, .25);
+    --note-bg: rgba(52, 72, 197, .08);
+    --note-border: rgba(52, 72, 197, .25);
   }
   * { box-sizing: border-box; }
   body { font-family: system-ui, -apple-system, sans-serif; max-width: 100rem; margin: 2rem auto; padding: 0 1.5rem; line-height: 1.5; color: var(--brand-text); background: var(--brand-bg); }
@@ -50,7 +50,7 @@ function renderHtml(): string {
   .sub a { color: var(--brand-primary); }
   section { border: 1px solid var(--border); border-radius: .5rem; padding: 1rem 1.25rem; margin: 1rem 0; background: var(--brand-bg); }
   section[hidden] { display: none; }
-  section.active { border-color: var(--brand-primary); box-shadow: 0 0 0 3px rgba(109, 109, 242, .15); }
+  section.active { border-color: var(--brand-primary); box-shadow: 0 0 0 3px rgba(52, 72, 197, .15); }
   section.track-anon.active { border-color: var(--brand-success); box-shadow: 0 0 0 3px rgba(63, 241, 199, .2); }
   section.track-anon h2 .num { background: var(--brand-success); color: var(--brand-text); }
   section.track-email.active { border-color: var(--track-email); box-shadow: 0 0 0 3px rgba(246, 185, 59, .18); }
@@ -89,8 +89,8 @@ function renderHtml(): string {
 </head>
 <body>
 <div class="full">
-<h1>Agent Auth Consumer</h1>
-<p class="sub">Interactive walk-through of three registration flows. Trusted issuer: <code>${providerHint}</code> — run the <a href="${providerHint}" target="_blank">provider sample</a> in parallel to mint real ID-JAGs. <button class="reset" type="button" id="reset">Reset</button></p>
+<h1>Cloudinary — Agent Registration</h1>
+<p class="sub">How an AI agent registers with Cloudinary, walked through the agentic-registration protocol. Cloudinary's shipped path is <strong>Track B — Email verification</strong> (<code>service_auth</code>): the agent supplies the user's email, Cloudinary returns inert credentials, and the human verifies the email to activate them. Tracks A and C are <strong>protocol illustrations</strong> — anonymous self-registration and ID-JAG identity assertion are not part of Cloudinary's current surface (ID-JAG: future). <button class="reset" type="button" id="reset">Reset</button></p>
 
 <section id="step-1" class="active">
   <h2><span class="num">1</span>Unauthenticated probe</h2>
@@ -120,7 +120,7 @@ function renderHtml(): string {
 
 <div class="tracks">
 <div class="track">
-<p class="track-header anon" id="track-a-header" hidden>Track A — Anonymous + claim handoff</p>
+<p class="track-header anon" id="track-a-header" hidden>Track A — Anonymous + claim handoff <span class="badge">illustration</span></p>
 
 <section id="step-3" class="track-anon" hidden>
   <h2><span class="num">3</span>Register anonymously</h2>
@@ -145,7 +145,7 @@ Content-Type: application/json
 
 <section id="step-5" class="track-anon" hidden>
   <h2><span class="num">5</span>Call with the pre-claim access_token</h2>
-  <p>The access_token works immediately, but only with the scopes configured for unclaimed registrations (here: <code>api.read</code>).</p>
+  <p>The access_token works immediately, but only with the scopes configured for unclaimed registrations (here: <code>upload</code>).</p>
   <button class="primary" type="button" data-action="anon-call-pre">Call /api/resource</button>
   <div id="anon-pre-out"></div>
 </section>
@@ -185,7 +185,7 @@ Content-Type: application/json
 </div>
 
 <div class="track">
-<p class="track-header email" id="track-b-header" hidden>Track B — Email-verification registration</p>
+<p class="track-header email" id="track-b-header" hidden>Track B — Email-verification registration <span class="badge">Cloudinary's shipped path</span></p>
 
 <section id="step-10" class="track-email" hidden>
   <h2><span class="num">10</span>Register with an email assertion</h2>
@@ -222,7 +222,7 @@ Content-Type: application/json
 </div>
 
 <div class="track">
-<p class="track-header ia" id="track-c-header" hidden>Track C — ID-JAG identity assertion</p>
+<p class="track-header ia" id="track-c-header" hidden>Track C — ID-JAG identity assertion <span class="badge">future</span></p>
 
 <section id="step-14" hidden>
   <h2><span class="num">14</span>Exchange an ID-JAG for an identity_assertion</h2>

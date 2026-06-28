@@ -1,8 +1,15 @@
-# auth.md
+# auth.md — Cloudinary
 
-A reference implementation of **agentic registration** — a protocol for agents to authenticate to services on behalf of users. Three roles: an **agent** acting for a user, an **agent provider** that mints identity assertions ([ID-JAGs](https://datatracker.ietf.org/doc/draft-ietf-oauth-identity-assertion-authz-grant/)), and a **service** that accepts those assertions, when available, and issues credentials. If the agent is not associated with a user identity, or the agent provider does not support ID-JAGs, the service uses an [RFC 8628](https://datatracker.ietf.org/doc/html/rfc8628)-style claim ceremony to authenticate the agent instead.
+> **This is a Cloudinary fork** of the [agentic-registration reference implementation](https://github.com/workos/auth.md). It shows how an AI agent registers with **Cloudinary** on behalf of a user, mapped onto the protocol. The headline artifact is Cloudinary's [`AUTH.md`](AUTH.md); the `agent-services` sample is re-skinned as Cloudinary so you can walk the flow locally.
 
-This repo includes sample implementations for both the agent provider and agent service side of agentic registration, and includes a sample [`AUTH.md`](AUTH.md) file, which the agent service would host, instructing agents how to authenticate with the service.
+**Agentic registration** is a protocol for agents to authenticate to services on behalf of users — discover → register → (claim if needed) → use the API → handle revocation. Cloudinary supports two registration paths, documented in [`AUTH.md`](AUTH.md):
+
+- **Delegation (OAuth)** — for a user who has, or will sign in to, a Cloudinary account. Interactive browser consent via Cloudinary's remote **MCP servers**; the agent receives a scoped bearer token. (The protocol's interactive-delegation path.)
+- **Provisioning (`service_auth`)** — for a user with no Cloudinary account yet. The agent creates one from the user's email; Cloudinary returns **inert** credentials that go live once the human verifies their email (the claim ceremony).
+
+The protocol's third type, `identity_assertion` (provider-minted [ID-JAGs](https://datatracker.ietf.org/doc/draft-ietf-oauth-identity-assertion-authz-grant/)), is **not supported yet** — see [`AUTH.md`](AUTH.md) → Future.
+
+The original reference also ships a sample **agent provider** that mints ID-JAGs; it's retained here unchanged for illustration, but Cloudinary does not consume ID-JAGs today.
 
 ## Layout
 
