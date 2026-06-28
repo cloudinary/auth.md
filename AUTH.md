@@ -7,7 +7,7 @@ Cloudinary exposes **two** registration paths. Pick one with this decision tree:
 1. **The user already has (or will sign in to) a Cloudinary account** → **[Delegation via OAuth](#path-1--delegation-oauth-via-cloudinarys-mcp-servers)**. The user authenticates and consents in a browser; you receive a scoped, short-lived bearer token. This is the richer path and is what Cloudinary's remote MCP servers use.
 2. **The user has no Cloudinary account yet and you only have their email** → **[Provisioning via `service_auth`](#path-2--provisioning-service_auth)**. You create a new account for them; Cloudinary returns credentials that stay **inert** until the human verifies their email (the claim ceremony). If that email already belongs to a Cloudinary account, provisioning is rejected — switch to Path 1.
 
-> **Mapping to the reference protocol.** Path 1 is the protocol's interactive delegation, layered on standard OAuth discovery (RFC 9728 / RFC 8414). Path 2 is the protocol's `service_auth` identity type. The protocol's `identity_assertion` (ID-JAG) type is **not supported yet** — see [Future](#future--identity_assertion-id-jag). A "Divergences from the reference protocol" note is at the [end](#divergences-from-the-reference-protocol).
+> **Mapping to the reference protocol.** Path 1 is the protocol's interactive delegation, layered on standard OAuth discovery (RFC 9728 / RFC 8414). Path 2 is the protocol's `service_auth` identity type. The protocol's third type, `identity_assertion` (ID-JAG) — a trusted provider minting a signed identity assertion so an agent can register headlessly — is **not supported**: Cloudinary has no inbound assertion-verification surface. A "Divergences from the reference protocol" note is at the [end](#divergences-from-the-reference-protocol).
 
 ---
 
@@ -15,7 +15,7 @@ Cloudinary exposes **two** registration paths. Pick one with this decision tree:
 
 Use this when the agent acts on behalf of a user who has, or will sign in to, a Cloudinary account. The human authenticates Cloudinary-side in a browser and chooses which product environment (cloud) you may act on; you get a scoped bearer token. No API key/secret ever touches the agent.
 
-This path is **interactive**: it requires the user to complete a browser sign-in and consent (an OAuth redirect). There is no fully headless delegation for existing accounts yet — that's the future [ID-JAG](#future--identity_assertion-id-jag) path.
+This path is **interactive**: it requires the user to complete a browser sign-in and consent (an OAuth redirect). There is no fully headless delegation for existing accounts — that would require the protocol's `identity_assertion` (ID-JAG) type, which Cloudinary does not support.
 
 > **If you use an MCP-capable client** (an SDK or host like Claude or Cursor), point it at one of the server URLs below and it runs Steps 1–4 for you — discovery, client registration, the authorization-code + PKCE flow, and token exchange. The manual flow documented here is for agents that implement OAuth directly.
 
@@ -222,14 +222,6 @@ To detect the duplicate-email case (so you know to switch to Path 1), match on `
 | 403 | *(none — "Invalid request")* | Request blocked (e.g. IP gating). Do not probe. |
 | 429 | `ip_rate_limit_exceeded` | Per-IP signup cap (default 10/day). Back off and retry later. |
 | 5xx | *(generic)* | Transient server error. Exponential backoff, then retry. |
-
----
-
-## Future — `identity_assertion` (ID-JAG)
-
-The reference protocol's third type, `identity_assertion` ([ID-JAG](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-identity-assertion-authz-grant)), lets a **trusted agent provider** mint a signed assertion of the user's identity so the agent can register **headlessly** (no browser) on behalf of an already-authenticated user. Cloudinary does **not** accept ID-JAGs today — there is no provider trust list and no inbound assertion-verification surface. Until it ships, use Path 1 (interactive OAuth) for delegation, or Path 2 (`service_auth`) when there's no account yet.
-
-An open design question specific to this headless path: a Cloudinary account can have multiple **product environments (clouds)**, and a credential acts on exactly one. The interactive OAuth path (Path 1) resolves this at the consent screen, where the user picks a cloud; a browserless ID-JAG flow has no such step, so it would need a policy for selecting the product environment (e.g. a default cloud, the user's sole cloud, or an explicit selection step). This does not affect Path 1 or Path 2.
 
 ---
 
