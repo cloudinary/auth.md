@@ -1,4 +1,7 @@
-# auth.md — Cloudinary
+---
+layout: default
+title: "auth.md — Cloudinary"
+---
 
 You are an agent. Cloudinary supports **agentic registration** — discover → register → (claim if needed) → use the API → handle revocation. This document tells you how to authenticate with Cloudinary on behalf of a user, whether or not that user already has a Cloudinary account.
 
