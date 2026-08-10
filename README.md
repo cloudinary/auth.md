@@ -5,9 +5,9 @@
 **Agentic registration** is a protocol for agents to authenticate to services on behalf of users — discover → register → (claim if needed) → use the API → handle revocation. Cloudinary supports two registration paths, documented in [`AUTH.md`](AUTH.md):
 
 - **Delegation (OAuth)** — for a user who has, or will sign in to, a Cloudinary account. Interactive browser consent via Cloudinary's remote **MCP servers**; the agent receives a scoped bearer token. (The protocol's interactive-delegation path.)
-- **Provisioning (`service_auth`)** — for a user with no Cloudinary account yet. The agent creates one from the user's email; Cloudinary returns **inert** credentials that go live once the human verifies their email (the claim ceremony).
+- **Provisioning (`anonymous`)** — for a user with no Cloudinary account yet, or when the agent doesn't know. One unauthenticated call provisions a **claimable cloud**: credentials that work immediately, with media delivery restricted to declared IPs. The human **claims** it within 24 hours to convert it into a permanent free account; unclaimed clouds are deleted.
 
-The protocol's third type, `identity_assertion` (provider-minted [ID-JAGs](https://datatracker.ietf.org/doc/draft-ietf-oauth-identity-assertion-authz-grant/)), is **not supported yet** — see [`AUTH.md`](AUTH.md) → Future.
+The protocol's third type, `identity_assertion` (provider-minted [ID-JAGs](https://datatracker.ietf.org/doc/draft-ietf-oauth-identity-assertion-authz-grant/)), is **not supported** — see [`AUTH.md`](AUTH.md) → [Divergences from the reference protocol](AUTH.md#divergences-from-the-reference-protocol).
 
 The original reference also ships a sample **agent provider** that mints ID-JAGs; it's retained here unchanged for illustration, but Cloudinary does not consume ID-JAGs today.
 

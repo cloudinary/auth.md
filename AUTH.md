@@ -5,9 +5,9 @@ You are an agent. Cloudinary supports **agentic registration** — discover → 
 Cloudinary exposes **two** registration paths. Pick one with this decision tree:
 
 1. **The user already has (or will sign in to) a Cloudinary account** → **[Delegation via OAuth](#path-1--delegation-oauth-via-cloudinarys-mcp-servers)**. The user authenticates and consents in a browser; you receive a scoped, short-lived bearer token. This is the richer path and is what Cloudinary's remote MCP servers use.
-2. **The user has no Cloudinary account yet and you only have their email** → **[Provisioning via `service_auth`](#path-2--provisioning-service_auth)**. You create a new account for them; Cloudinary returns credentials that stay **inert** until the human verifies their email (the claim ceremony). If that email already belongs to a Cloudinary account, provisioning is rejected — switch to Path 1.
+2. **The user has no Cloudinary account yet, or you don't know whether they do** → **[Provisioning a claimable cloud](#path-2--provisioning-a-claimable-cloud)**. One unauthenticated call returns credentials that work immediately, for a temporary cloud. The human **claims** it within 24 hours to convert it into a permanent free account; their email is optional up front. If it turns out they *did* already have an account, nothing fails until the claim — see [Step 3](#step-3--claim-ceremony-deferred), where they either claim with a different address or switch to Path 1 and let this cloud expire. When you can just ask, asking is cheaper than finding out there.
 
-> **Mapping to the reference protocol.** Path 1 is the protocol's interactive delegation, layered on standard OAuth discovery (RFC 9728 / RFC 8414). Path 2 is the protocol's `service_auth` identity type. The protocol's third type, `identity_assertion` (ID-JAG) — a trusted provider minting a signed identity assertion so an agent can register headlessly — is **not supported**: Cloudinary has no inbound assertion-verification surface. A "Divergences from the reference protocol" note is at the [end](#divergences-from-the-reference-protocol).
+> **Mapping to the reference protocol.** Path 1 is the protocol's interactive delegation, layered on standard OAuth discovery (RFC 9728 / RFC 8414). Path 2 is the protocol's `anonymous` identity type — you register with no user identity, operate with restricted **reach** (full API capability, but delivery limited to declared IPs — see divergence 2), and defer the claim ceremony until the user wants ownership. The protocol's third type, `identity_assertion` (ID-JAG) — a trusted provider minting a signed identity assertion so an agent can register headlessly — is **not supported**: Cloudinary has no inbound assertion-verification surface. A "Divergences from the reference protocol" note is at the [end](#divergences-from-the-reference-protocol).
 
 ---
 
@@ -122,71 +122,75 @@ You receive a JWT **access token** (short-lived) and, with `offline_access`, a *
 
 ---
 
-## Path 2 — Provisioning (`service_auth`)
+## Path 2 — Provisioning a claimable cloud
 
-Use this when the user does **not** have a Cloudinary account and you have their email. This path **bootstraps and claims an account**; it does not, by itself, have to be how you make API calls. **Once the human has completed the claim (Step 2)** — and not before — the recommended way to act on the account is **[Path 1](#path-1--delegation-oauth-via-cloudinarys-mcp-servers)** (OAuth delegation): short-lived, scoped tokens, with no root secret ever held by the agent. Until the claim completes there is no Cloudinary login to delegate, so Path 1 is not available; the root credentials provisioning returns are a documented fallback, not the default.
+Use this when the user has no Cloudinary account, or when you don't know whether they do and want to start working now. One unauthenticated call provisions a **claimable cloud**: a temporary product environment whose credentials work immediately. The human **claims** it within 24 hours to convert it into a permanent free account. If nobody claims it, Cloudinary deletes the cloud and everything in it.
 
-### Step 1 — Register
+Unlike Path 1, nothing here is interactive up front — no signup, no browser, no existing credentials. The trade is that you hold the environment's root secret, and delivery is restricted until the claim completes (Step 3).
 
-`POST` the agent account-creation endpoint. **No authentication is required** to call it.
+> **Shortcut.** If you can run shell commands, `npx @cloudinary/cloud` does Step 1 for you — it provisions the cloud, writes the credentials to `.env`, and prints the claim URL. Two behaviors to expect: it locks delivery to the public IP it runs from unless you pass `--ip <address>` (see the warning in Step 1), and it **exits without provisioning** if `.env` already contains a `CLOUDINARY_URL` unless you pass `--force` — that exit is a guard against burning a rate-limited cloud, not a failure to retry. The HTTP flow below is for agents calling the API directly.
+
+### Step 1 — Provision
+
+**No authentication is required** to call this endpoint.
 
 ```http
-POST https://api.cloudinary.com/v1_1/provisioning/agents/accounts
+POST https://api.cloudinary.com/v1_1/provisioning/clouds
 Content-Type: application/json
 
 {
-  "email": "user@example.com",
-  "agent_framework": "<framework, e.g. langchain>",
-  "agent_llm_model": "<model & version>",
-  "agent_goal": "<why the account is being created>",
-  "sdk_framework": "<optional, e.g. node>"
+  "delivery_ips": ["203.0.113.7"],
+  "email": "user@example.com"
 }
 ```
 
 | Field | Required | Notes |
 | --- | --- | --- |
-| `email` | yes | The human you're acting for. Account, derived account name, and verification target. |
-| `agent_framework` | yes | 2–100 chars. |
-| `agent_llm_model` | yes | 2–100 chars. |
-| `agent_goal` | yes | 2–300 chars. |
-| `sdk_framework` | no | 2–100 chars; tailors the `guidance` block. |
+| `delivery_ips` | yes | One to three **public** IP addresses (IPv4 or IPv6) allowed to fetch delivered media while the cloud is unclaimed. Pass the literal string `"requester_ip"` to use the calling machine's public IP. CIDR ranges and private/LAN/loopback addresses are rejected. |
+| `email` | no | Pre-fills the claim page. The human confirms or changes it at claim time, so this is a convenience, not a binding — supplying it does not reserve the account or make the claim automatic. |
+
+> **Declare the IPs where the media will be *viewed*, not where you run.** This is the easiest thing to get wrong, and it fails quietly: uploads and transformations succeed from anywhere, so a mis-declared cloud looks healthy to you while every delivery URL is blocked at the CDN edge for the user.
+>
+> - **You run on the user's machine** (local CLI, desktop agent) → `"requester_ip"` is correct.
+> - **You run anywhere else** (CI job, cloud runtime, hosted agent) → `"requester_ip"` is **wrong**; it locks delivery to your server. Ask the user for the public IP they'll view from and pass that.
+>
+> If you can't get a viewer IP, don't guess — you still have to send something valid, so send `"requester_ip"`, then surface `claim_url` immediately and wait for the claim before relying on delivery. Claiming removes the restriction entirely, which makes whatever you declared moot.
 
 Response (`200`):
 
 ```json
 {
-  "external_id": "<account external id>",
+  "id": "0aaaaa1bbbbb2ccccc3ddddd4eeeee5f",
   "email": "user@example.com",
-  "plan_name": "Free",
+  "expires_at": "2026-07-22T09:30:00Z",
+  "delivery_ips": ["203.0.113.7"],
   "product_environments": [
     {
-      "external_id": "<env external id>",
-      "cloud_name": "<cloud>",
-      "api_key": "<api key>",
-      "api_secret": "<api secret>",
-      "api_environment_variable": "CLOUDINARY_URL=cloudinary://<api_key>:<api_secret>@<cloud>"
+      "external_id": "1a2b3c4d5e6f7a8b9c0d1e2f3a4b",
+      "cloud_name": "my-cloud",
+      "api_key": "123456789012345",
+      "api_secret": "ABCdef1234567890ghijklMNOpqr",
+      "api_environment_variable": "CLOUDINARY_URL=cloudinary://123456789012345:ABCdef1234567890ghijklMNOpqr@my-cloud"
     }
   ],
-  "guidance": "<human/agent-readable next steps>"
+  "claim_url": "https://console.cloudinary.com/users/agent_email_confirmation?token=abc123",
+  "guidance": "<agent-readable next steps>"
 }
 ```
 
-These are the product environment's **root** `api_key` / `api_secret`. **They do not work yet** — the environment is created disabled. You generally do **not** need to store them: prefer the OAuth hand-off in Step 3. If you do retain them for the fallback path, treat `api_secret` as a full-access root secret — never log it or expose it in client-side code, and persist it securely. Surface the `guidance` to the user either way.
+Three fields matter beyond the credentials:
 
-### Step 2 — Claim ceremony (email verification)
+- `claim_url` — the ceremony handle, carrying a bearer token in the query string. Anyone with this URL can claim the cloud, so treat it as a secret: hand it to your user, don't log it or post it anywhere shared. It is not re-issuable, so keep it for as long as the cloud is unclaimed.
+- `expires_at` — the end of the claim window (24 hours from provisioning). Deletion, not just a closed upgrade path (see [Step 3](#step-3--claim-ceremony-deferred)).
+- `guidance` — agent-readable next steps. Surface it to the user.
 
-Cloudinary emails the human a verification link. Direct the user to:
+If you omitted `email`, the `email` in the response is a **non-routable placeholder**, not a real address — don't display it or mail it. The user's real address is set at claim time.
 
-1. Open the email Cloudinary sent to the address you supplied.
-2. Click the verification link, **set a password**, and confirm.
+`api_key` / `api_secret` are the product environment's **root** credentials. Treat `api_secret` as full-access: never log it or expose it in client-side code, and persist it securely.
 
-That completes the claim: Cloudinary marks the email verified and **activates** the product environment. After this, the human has a normal Cloudinary account with a password — which is exactly what Path 1 (delegation) needs. The link expires in ~24 hours.
+### Step 2 — Use the credentials
 
-### Step 3 — Get API access
-
-**Preferred — switch to delegation (Path 1).** This becomes available **only after the claim in Step 2 is complete** — the user has verified their email and set a password, which is the login Path 1 delegates against. There is no OAuth login to perform before that point. Once claimed, run the [Path 1](#path-1--delegation-oauth-via-cloudinarys-mcp-servers) authorization-code + PKCE flow; the user signs in with the password they just set and selects the product environment. You receive a scoped, short-lived bearer token and never handle the root secret. It is interactive (browser), but the user is already in a browser from the claim ceremony, so the sign-in folds naturally into the same session.
-
-**Fallback — use the returned root credentials directly.** Use this when no browser is available for OAuth (e.g. a fully headless agent), or when you need direct REST API access beyond what the MCP servers expose — Path 1 tokens are MCP-only (see [Path 1, Step 5](#step-5--use-refresh-revoke)), so the root key/secret are the only way to call Cloudinary's REST APIs directly. Once the environment is active, authenticate with the root key/secret (HTTP Basic, or the `CLOUDINARY_URL` / SDK config):
+The credentials work right away — there is nothing to activate and nothing to wait for. Authenticate with HTTP Basic, or configure an SDK from `api_environment_variable`:
 
 ```http
 POST https://api.cloudinary.com/v1_1/<cloud_name>/image/upload      # Upload API
@@ -194,34 +198,73 @@ GET  https://api.cloudinary.com/v1_1/<cloud_name>/resources/image   # Admin API
 Authorization: Basic base64(<api_key>:<api_secret>)
 ```
 
-Or configure an SDK directly from `api_environment_variable`. This is less safe than delegation: the root key/secret are **full-access** and long-lived, so the leak blast radius is the entire product environment. Prefer Path 1 whenever a browser is reachable. Full API reference: <https://cloudinary.com/documentation>.
+Two limits apply while the cloud is unclaimed:
 
-> **Detecting activation (fallback path only).** There is **no agent-pollable completion signal** for the claim — Cloudinary returns no `user_code`, `verification_uri` to poll, or status endpoint. To learn that activation completed, **retry a real API call** until it succeeds, backing off between attempts. (On the preferred path, the user completing OAuth sign-in is itself the signal.)
+- **Delivery is IP-locked.** Only the `delivery_ips` you declared can fetch delivered media. Uploads, transformations, and API calls are unrestricted; only delivery of the resulting media is. Delivery URLs are therefore shareable with the viewers you declared and **nobody else** — and when one fails from an undeclared address, that's the IP lock, not a broken asset or a bad transformation.
+- **Usage caps are lower** than a regular free account. Claiming lifts them to the free plan's normal limits.
 
-### Step 4 — Revoke
+This is where the protocol's pre-claim restriction lands: Cloudinary expresses it as delivery egress plus quota rather than as reduced `pre_claim_scopes`, so your API capability is full from the start but your reach is not.
 
-- If you took the **Path 1** hand-off, revoke per [Path 1, Step 5](#step-5--use-refresh-revoke) (sign the user out; tokens are short-lived).
-- If you used the **root credentials** directly, there is no token to revoke — the human rotates the API key/secret or disables the product environment in the Cloudinary Console.
+Full API reference: <https://cloudinary.com/documentation>.
+
+### Step 3 — Claim ceremony (deferred)
+
+The claim converts the temporary cloud into a permanent free account owned by the human. Surface `claim_url` to the user. Suggested copy:
+
+> Open this link to keep the cloud I set up — it expires in 24 hours, and everything in it is deleted if it isn't claimed:
+> https://console.cloudinary.com/users/agent_email_confirmation?token=…
+
+At that URL the user will:
+
+1. Enter their email address (pre-filled if you supplied one at provisioning).
+2. Review the privacy policy and terms of service.
+3. Optionally set a password for signing in to the Console.
+4. Confirm from the verification email Cloudinary sends.
+
+On success, nothing you stored breaks: `cloud_name`, `api_key`, and `api_secret` stay the same. The delivery IP restriction is removed, delivery works globally, and the free plan's regular limits apply.
+
+**If the email already belongs to a Cloudinary account**, the claim page rejects it and the user enters a different address. Provisioning never fails for this reason — the collision surfaces here, at claim time, not at Step 1. If the user wants to keep working in the account they already have, that's [Path 1](#path-1--delegation-oauth-via-cloudinarys-mcp-servers); this cloud is separate and can be left to expire.
+
+**Surface the claim URL early — don't sit on it.** At `expires_at` an unclaimed cloud and all of its content are deleted, so treat a long-running job on an unclaimed cloud as work you may lose. Submitting the claim form does extend the window, so a ceremony already in progress won't be cut off mid-flight — but that only helps a user who has already opened the link.
+
+> **No completion signal.** Cloudinary exposes no status endpoint for a claimable cloud and no `user_code` + poll grant, so you cannot ask whether the claim landed. **Ask the user.** Delivery succeeding from an undeclared IP does imply the claim completed, but it's a poor probe: if you declared `"requester_ip"` you *are* a declared address, so your own requests succeed either way and tell you nothing. Don't busy-poll delivery.
+
+### Step 4 — After the claim: consider delegation (optional)
+
+Claiming gives the human a Console login, which is exactly what [Path 1](#path-1--delegation-oauth-via-cloudinarys-mcp-servers) delegates against — so OAuth becomes available to you only after Step 3, never before.
+
+Switching is worth it for long-lived work: Path 1 gives you short-lived, scoped tokens and no root secret. Note the asymmetry before you commit — Path 1 tokens are **MCP-only** (see [Path 1, Step 5](#step-5--use-refresh-revoke)), so if you need direct REST access, the root key/secret remain the only way to get it.
+
+Whichever you choose, be explicit with the user about what you keep. The claim does not rotate the credentials, so an agent that provisioned the cloud still holds root access to what is now the user's permanent account. If they don't want that, they rotate the API key/secret in the Console.
+
+### Step 5 — Revoke
+
+- **Unclaimed** — let it lapse. Expiry deletes the cloud outright, so simply not claiming is the teardown.
+- **Claimed, root credentials** — no token to revoke; the human rotates the API key/secret or disables the product environment in the Cloudinary Console.
+- **Claimed, delegated via Path 1** — revoke per [Path 1, Step 5](#step-5--use-refresh-revoke) (sign the user out; tokens are short-lived).
 
 ### Errors (provisioning)
 
-All errors use Cloudinary's standard envelope. `category` and `message` are always present; `code` and `details` are **optional** and appear only on some errors — the validation and duplicate-email `400`s below carry just `category` + `message`:
+Failures return an HTTP status and an `error` object. `category` and `message` are always present; `code` is optional and appears on most — but not all — of the cases below. Match on `error.code` (nested, not top-level) where one is listed, since messages may be reworded:
 
 ```json
-{ "error": { "category": "...", "message": "...", "code": "<optional>", "details": { } } }
+{ "error": { "category": "user_error", "code": "delivery_ips_required", "message": "delivery_ips is required" } }
 ```
-
-To detect the duplicate-email case (so you know to switch to Path 1), match on `400` whose `message` reports the email is already taken — observed as the string `{"email":["has already been taken"]}` — rather than a literal "already registered".
 
 | Status | `code` | What to do |
 | --- | --- | --- |
-| 400 | *(validation message)* | Missing/oversized `email` or agent metadata, or invalid UTF-8. Fix the body. |
-| 400 | *(email already registered)* | The email already has a Cloudinary account — don't retry provisioning; use **Path 1** (delegation) instead. |
-| 403 | `agent_registration_disabled` | Agent signup is temporarily off. Do not retry tightly; fall back to asking the human to sign up. |
+| 400 | `delivery_ips_required` | You omitted `delivery_ips`. Send one to three public IPs, or `"requester_ip"`. |
+| 400 | `delivery_ips_too_many` | More than three supplied. Send at most three. |
+| 400 | `delivery_ips_invalid` | Not a valid IPv4/IPv6 address — CIDR ranges are rejected, so expand or pick a single address. |
+| 400 | `delivery_ips_not_public` | A private/LAN address was supplied. Use a routable public IP, or `"requester_ip"` to let Cloudinary resolve it. |
+| 403 | `agent_registration_disabled` | Provisioning is temporarily off. Do not retry tightly; fall back to asking the human to sign up. |
 | 403 | `geo_location_not_permitted` | Requests from your region are not allowed. |
-| 403 | *(none — "Invalid request")* | Request blocked (e.g. IP gating). Do not probe. |
-| 429 | `ip_rate_limit_exceeded` | Per-IP signup cap (default 10/day). Back off and retry later. |
+| 403 | *(none)* | Blocked by abuse controls. Do not probe. |
+| 429 | `ip_rate_limit_exceeded` | Per-IP cap reached. Back off and retry later. |
+| 429 | `global_rate_limit_exceeded` | Cloudinary-wide cap reached. Back off and retry later; this one is not about you. |
 | 5xx | *(generic)* | Transient server error. Exponential backoff, then retry. |
+
+> **Provisioning is a one-off call, not an integration point.** Cloudinary reserves the right to change this endpoint's details, on the assumption that an agent calls it once to bootstrap. Don't build a component that depends on its exact shape. Everything *after* the claim is ordinary Cloudinary API surface and is stable.
 
 ---
 
@@ -230,6 +273,8 @@ To detect the duplicate-email case (so you know to switch to Path 1), match on `
 Cloudinary follows the protocol's shape but differs in mechanics on the provisioning path — called out so you don't expect protocol-exact behavior:
 
 1. **Credential type.** Path 2 returns an **API key/secret** (HTTP Basic), not a bearer token. (Path 1 is bearer-token, as the protocol expects.)
-2. **Claim mechanism.** The claim ceremony is an **email-verification link**, not the device-style `user_code` + `verification_uri` + poll grant.
-3. **Credential timing.** Provisioning credentials are **returned immediately but inert**, then activated by verification — the protocol's `service_auth` withholds the credential until the ceremony completes. Same security property (nothing works until the human verifies), different timing.
-4. **No completion signal.** There's no poll endpoint for the claim; you retry the API to detect activation.
+2. **Pre-claim restriction.** The protocol limits an unclaimed agent with reduced `pre_claim_scopes`. Cloudinary instead grants **full API capability** and restricts **media delivery** to the IPs you declared, plus lower usage caps. Practical consequence: you have to decide your delivery topology at provisioning time, before you know where the media will be viewed.
+3. **Claim mechanism.** The ceremony is a **claim URL plus email verification**, not the device-style `user_code` + `verification_uri` + poll grant. No code travels agent → user, so the URL itself is the entire binding — whoever holds it can claim the cloud.
+4. **No completion signal.** There's no poll grant and no status endpoint. You ask the user — there is no reliable agent-side probe.
+5. **Destructive expiry.** In the protocol an unclaimed registration merely stops being upgradeable. Here the cloud **and all of its content are deleted** 24 hours after provisioning. Unclaimed is not a state you can park in.
+6. **The claim window is extendable; the protocol's is not.** In the protocol the outer claim window is fixed at registration — only the inner `user_code` can be re-issued within it. Cloudinary extends the outer window when the user submits the claim form, so a ceremony under way won't be cut off. This cuts in your favor, but don't rely on it: it only helps a user who has already opened the link.

@@ -21,9 +21,10 @@ export const config = Object.freeze({
   scopesSupported: ["asset_management", "upload"],
   /**
    * Scope an unclaimed registration's access_token gets before the human
-   * verifies. Illustrative reduced scope so the anonymous demo track stays
-   * runnable; on Cloudinary's real provisioning path the returned root
-   * credentials are fully INERT until email verification, not merely reduced.
+   * claims. Illustrative reduced scope so the anonymous demo track stays
+   * runnable; Cloudinary's real claimable-cloud path expresses the pre-claim
+   * limit differently — full API capability from the start, with media
+   * delivery restricted to declared IPs and lower usage caps. See AUTH.md.
    */
   preClaimScopes: ["upload"],
   postClaimScopes: ["asset_management", "upload"],
