@@ -68,7 +68,7 @@ GET https://asset-management.mcp.cloudinary.com/.well-known/oauth-authorization-
 }
 ```
 
-> **Discovery note.** Fetch `/.well-known/oauth-protected-resource` directly at the resource host — it's the standardized well-known location, so it always resolves. Cloudinary's `401`s do not include the optional `WWW-Authenticate: Bearer resource_metadata="…"` pointer; [RFC 9728 §5](https://datatracker.ietf.org/doc/html/rfc9728#section-5) marks that pointer as a *MAY*, and because the documents live at the conventional path, it isn't needed to discover them.
+> **Discovery note.** Fetch `/.well-known/oauth-protected-resource` directly at the resource host — it's the standardized well-known location, so it always resolves. Cloudinary's `401`s also return the [RFC 9728 §5](https://datatracker.ietf.org/doc/html/rfc9728#section-5) `WWW-Authenticate: Bearer resource_metadata="…"` pointer to that same document, so you can discover it from a challenge response too.
 
 ### Step 2 — Register a client (dynamic, optional)
 
