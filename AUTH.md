@@ -149,7 +149,7 @@ Content-Type: application/json
 | `delivery_ips` | yes | One to three **public** IP addresses (IPv4 or IPv6) allowed to fetch delivered media while the cloud is unclaimed. Pass the literal string `"requester_ip"` to use the calling machine's public IP. CIDR ranges and private/LAN/loopback addresses are rejected. |
 | `email` | no | Pre-fills the claim page. The human confirms or changes it at claim time, so this is a convenience, not a binding — supplying it does not reserve the account or make the claim automatic. |
 
-> **Declare the IPs where the media will be *viewed*, not where you run.** This is the easiest thing to get wrong, and it fails quietly: uploads and transformations succeed from anywhere, so a mis-declared cloud looks healthy to you while every delivery URL 403s for the user.
+> **Declare the IPs where the media will be *viewed*, not where you run.** This is the easiest thing to get wrong, and it fails quietly: uploads and transformations succeed from anywhere, so a mis-declared cloud looks healthy to you while every delivery URL is blocked at the CDN edge for the user.
 >
 > - **You run on the user's machine** (local CLI, desktop agent) → `"requester_ip"` is correct.
 > - **You run anywhere else** (CI job, cloud runtime, hosted agent) → `"requester_ip"` is **wrong**; it locks delivery to your server. Pass the viewer's public IP instead — ask the user for it, or ask them to open the claim URL first and work against a claimed cloud, which has no restriction at all.
@@ -179,7 +179,7 @@ Response (`200`):
 Three fields matter beyond the credentials:
 
 - `claim_url` — the ceremony handle, carrying a bearer token in the query string. Anyone with this URL can claim the cloud, so treat it as a secret: hand it to your user, don't log it or post it anywhere shared. It is not re-issuable, so keep it for as long as the cloud is unclaimed.
-- `expires_at` — the end of the claim window (24 hours from provisioning). A hard deadline, not a soft one (see [Step 3](#step-3--claim-ceremony-deferred)).
+- `expires_at` — the end of the claim window (24 hours from provisioning). Deletion, not just a closed upgrade path (see [Step 3](#step-3--claim-ceremony-deferred)).
 - `guidance` — agent-readable next steps. Surface it to the user.
 
 If you omitted `email`, the `email` in the response is a **non-routable placeholder**, not a real address — don't display it or mail it. The user's real address is set at claim time.
@@ -274,4 +274,5 @@ Cloudinary follows the protocol's shape but differs in mechanics on the provisio
 2. **Pre-claim restriction.** The protocol limits an unclaimed agent with reduced `pre_claim_scopes`. Cloudinary instead grants **full API capability** and restricts **media delivery** to the IPs you declared, plus lower usage caps. Practical consequence: you have to decide your delivery topology at provisioning time, before you know where the media will be viewed.
 3. **Claim mechanism.** The ceremony is a **claim URL plus email verification**, not the device-style `user_code` + `verification_uri` + poll grant. No code travels agent → user, so the URL itself is the entire binding — whoever holds it can claim the cloud.
 4. **No completion signal.** There's no poll grant and no status endpoint. You ask the user — there is no reliable agent-side probe.
-5. **Destructive expiry.** In the protocol an unclaimed registration merely stops being upgradeable. Here the cloud **and all of its content are deleted** 24 hours after provisioning. Unclaimed is not a state you can park in. (As in the protocol, a ceremony already under way extends the window; the deadline binds a user who never starts.)
+5. **Destructive expiry.** In the protocol an unclaimed registration merely stops being upgradeable. Here the cloud **and all of its content are deleted** 24 hours after provisioning. Unclaimed is not a state you can park in.
+6. **The claim window is extendable; the protocol's is not.** In the protocol the outer claim window is fixed at registration — only the inner `user_code` can be re-issued within it. Cloudinary extends the outer window when the user submits the claim form, so a ceremony under way won't be cut off. This cuts in your favor, but don't rely on it: it only helps a user who has already opened the link.
