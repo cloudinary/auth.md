@@ -126,9 +126,9 @@ You receive a JWT **access token** (short-lived) and, with `offline_access`, a *
 
 Use this when the user has no Cloudinary account, or when you don't know whether they do and want to start working now. One unauthenticated call provisions a **claimable cloud**: a temporary product environment whose credentials work immediately. The human **claims** it within 24 hours to convert it into a permanent free account. If nobody claims it, Cloudinary deletes the cloud and everything in it.
 
-Unlike Path 1, nothing here is interactive up front — no signup, no browser, no existing credentials. The trade is that you hold the environment's root secret, and delivery is restricted until the claim completes (Step 2).
+Unlike Path 1, nothing here is interactive up front — no signup, no browser, no existing credentials. The trade is that you hold the environment's root secret, and delivery is restricted until the claim completes (Step 3).
 
-> **Shortcut.** If you can run shell commands, `npx @cloudinary/cloud` does Step 1 for you — it provisions the cloud, writes the credentials to `.env`, and prints the claim URL. The HTTP flow below is for agents calling the API directly.
+> **Shortcut.** If you can run shell commands, `npx @cloudinary/cloud` does Step 1 for you — it provisions the cloud, writes the credentials to `.env`, and prints the claim URL. Two behaviors to expect: it locks delivery to the public IP it runs from unless you pass `--ip <address>` (see the warning in Step 1), and it **exits without provisioning** if `.env` already contains a `CLOUDINARY_URL` unless you pass `--force` — that exit is a guard against burning a rate-limited cloud, not a failure to retry. The HTTP flow below is for agents calling the API directly.
 
 ### Step 1 — Provision
 
@@ -139,15 +139,20 @@ POST https://api.cloudinary.com/v1_1/provisioning/clouds
 Content-Type: application/json
 
 {
-  "delivery_ips": ["requester_ip"],
+  "delivery_ips": ["203.0.113.7"],
   "email": "user@example.com"
 }
 ```
 
 | Field | Required | Notes |
 | --- | --- | --- |
-| `delivery_ips` | yes | One to three **public** IP addresses (IPv4 or IPv6) allowed to fetch delivered media while the cloud is unclaimed. Pass the literal string `"requester_ip"` to use the calling machine's public IP — the right choice when the agent runs on the same machine where the media will be viewed. CIDR ranges and private/LAN addresses are rejected. |
+| `delivery_ips` | yes | One to three **public** IP addresses (IPv4 or IPv6) allowed to fetch delivered media while the cloud is unclaimed. Pass the literal string `"requester_ip"` to use the calling machine's public IP. CIDR ranges and private/LAN/loopback addresses are rejected. |
 | `email` | no | Pre-fills the claim page. The human confirms or changes it at claim time, so this is a convenience, not a binding — supplying it does not reserve the account or make the claim automatic. |
+
+> **Declare the IPs where the media will be *viewed*, not where you run.** This is the easiest thing to get wrong, and it fails quietly: uploads and transformations succeed from anywhere, so a mis-declared cloud looks healthy to you while every delivery URL 403s for the user.
+>
+> - **You run on the user's machine** (local CLI, desktop agent) → `"requester_ip"` is correct.
+> - **You run anywhere else** (CI job, cloud runtime, hosted agent) → `"requester_ip"` is **wrong**; it locks delivery to your server. Pass the viewer's public IP instead — ask the user for it, or ask them to open the claim URL first and work against a claimed cloud, which has no restriction at all.
 
 Response (`200`):
 
@@ -177,6 +182,8 @@ Three fields matter beyond the credentials:
 - `expires_at` — the end of the claim window (24 hours from provisioning). A hard deadline, not a soft one (see [Step 3](#step-3--claim-ceremony-deferred)).
 - `guidance` — agent-readable next steps. Surface it to the user.
 
+If you omitted `email`, the `email` in the response is a **non-routable placeholder**, not a real address — don't display it or mail it. The user's real address is set at claim time.
+
 `api_key` / `api_secret` are the product environment's **root** credentials. Treat `api_secret` as full-access: never log it or expose it in client-side code, and persist it securely.
 
 ### Step 2 — Use the credentials
@@ -191,7 +198,7 @@ Authorization: Basic base64(<api_key>:<api_secret>)
 
 Two limits apply while the cloud is unclaimed:
 
-- **Delivery is IP-locked.** Only the `delivery_ips` you declared can fetch delivered media. Uploads, transformations, and API calls are unrestricted; only delivery of the resulting media is. So a delivery URL that renders on your machine will fail for anyone else — don't share delivery URLs pre-claim, and don't read a failure elsewhere as a broken asset or a bad transformation.
+- **Delivery is IP-locked.** Only the `delivery_ips` you declared can fetch delivered media. Uploads, transformations, and API calls are unrestricted; only delivery of the resulting media is. Delivery URLs are therefore shareable with the viewers you declared and **nobody else** — and when one fails from an undeclared address, that's the IP lock, not a broken asset or a bad transformation.
 - **Usage caps are lower** than a regular free account. Claiming lifts them to the free plan's normal limits.
 
 This is where the protocol's pre-claim restriction lands: Cloudinary expresses it as delivery egress plus quota rather than as reduced `pre_claim_scopes`, so your API capability is full from the start but your reach is not.
@@ -214,9 +221,11 @@ At that URL the user will:
 
 On success, nothing you stored breaks: `cloud_name`, `api_key`, and `api_secret` stay the same. The delivery IP restriction is removed, delivery works globally, and the free plan's regular limits apply.
 
-**Surface the claim URL early — don't sit on it.** There is no extension and no grace period: at `expires_at` an unclaimed cloud and all of its content are deleted. Treat a long-running job on an unclaimed cloud as work you may lose.
+**If the email already belongs to a Cloudinary account**, the claim page rejects it and the user enters a different address. Provisioning never fails for this reason — the collision surfaces here, at claim time, not at Step 1. If the user wants to keep working in the account they already have, that's [Path 1](#path-1--delegation-oauth-via-cloudinarys-mcp-servers); this cloud is separate and can be left to expire.
 
-> **No completion signal.** Cloudinary exposes no status endpoint for a claimable cloud and no `user_code` + poll grant, so you cannot ask whether the claim landed. Either ask the user, or infer it by attempting a delivery from outside your declared `delivery_ips` — it starts succeeding once the cloud is claimed. Don't busy-poll delivery to find out.
+**Surface the claim URL early — don't sit on it.** At `expires_at` an unclaimed cloud and all of its content are deleted, so treat a long-running job on an unclaimed cloud as work you may lose. Submitting the claim form does extend the window, so a ceremony already in progress won't be cut off mid-flight — but that only helps a user who has already opened the link.
+
+> **No completion signal.** Cloudinary exposes no status endpoint for a claimable cloud and no `user_code` + poll grant, so you cannot ask whether the claim landed. **Ask the user.** Delivery succeeding from an undeclared IP does imply the claim completed, but it's a poor probe: if you declared `"requester_ip"` you *are* a declared address, so your own requests succeed either way and tell you nothing. Don't busy-poll delivery.
 
 ### Step 4 — After the claim: consider delegation (optional)
 
@@ -234,7 +243,11 @@ Whichever you choose, be explicit with the user about what you keep. The claim d
 
 ### Errors (provisioning)
 
-Failures return an HTTP status and, for most cases, a machine-readable `code` — match on the `code` where one is listed below, since messages may be reworded.
+Failures return an HTTP status and an `error` object. `category` and `message` are always present; `code` is optional and appears on most — but not all — of the cases below. Match on `error.code` (nested, not top-level) where one is listed, since messages may be reworded:
+
+```json
+{ "error": { "category": "user_error", "code": "delivery_ips_required", "message": "delivery_ips is required" } }
+```
 
 | Status | `code` | What to do |
 | --- | --- | --- |
@@ -249,6 +262,8 @@ Failures return an HTTP status and, for most cases, a machine-readable `code` �
 | 429 | `global_rate_limit_exceeded` | Cloudinary-wide cap reached. Back off and retry later; this one is not about you. |
 | 5xx | *(generic)* | Transient server error. Exponential backoff, then retry. |
 
+> **Provisioning is a one-off call, not an integration point.** Cloudinary reserves the right to change this endpoint's details, on the assumption that an agent calls it once to bootstrap. Don't build a component that depends on its exact shape. Everything *after* the claim is ordinary Cloudinary API surface and is stable.
+
 ---
 
 ## Divergences from the reference protocol
@@ -258,5 +273,5 @@ Cloudinary follows the protocol's shape but differs in mechanics on the provisio
 1. **Credential type.** Path 2 returns an **API key/secret** (HTTP Basic), not a bearer token. (Path 1 is bearer-token, as the protocol expects.)
 2. **Pre-claim restriction.** The protocol limits an unclaimed agent with reduced `pre_claim_scopes`. Cloudinary instead grants **full API capability** and restricts **media delivery** to the IPs you declared, plus lower usage caps. Practical consequence: you have to decide your delivery topology at provisioning time, before you know where the media will be viewed.
 3. **Claim mechanism.** The ceremony is a **claim URL plus email verification**, not the device-style `user_code` + `verification_uri` + poll grant. No code travels agent → user, so the URL itself is the entire binding — whoever holds it can claim the cloud.
-4. **No completion signal.** There's no poll grant and no status endpoint; you ask the user, or infer the claim from delivery starting to work outside your declared IPs.
-5. **Hard expiry.** In the protocol an unclaimed registration merely stops being upgradeable. Here the cloud **and all of its content are deleted** 24 hours after provisioning. Unclaimed is not a state you can park in.
+4. **No completion signal.** There's no poll grant and no status endpoint. You ask the user — there is no reliable agent-side probe.
+5. **Destructive expiry.** In the protocol an unclaimed registration merely stops being upgradeable. Here the cloud **and all of its content are deleted** 24 hours after provisioning. Unclaimed is not a state you can park in. (As in the protocol, a ceremony already under way extends the window; the deadline binds a user who never starts.)
