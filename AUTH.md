@@ -5,9 +5,9 @@ You are an agent. Cloudinary supports **agentic registration** — discover → 
 Cloudinary exposes **two** registration paths. Pick one with this decision tree:
 
 1. **The user already has (or will sign in to) a Cloudinary account** → **[Delegation via OAuth](#path-1--delegation-oauth-via-cloudinarys-mcp-servers)**. The user authenticates and consents in a browser; you receive a scoped, short-lived bearer token. This is the richer path and is what Cloudinary's remote MCP servers use.
-2. **The user has no Cloudinary account yet, or you don't know whether they do** → **[Provisioning a claimable cloud](#path-2--provisioning-a-claimable-cloud)**. One unauthenticated call returns credentials that work immediately, for a temporary cloud. The human **claims** it within 24 hours to convert it into a permanent free account; their email is optional up front.
+2. **The user has no Cloudinary account yet, or you don't know whether they do** → **[Provisioning a claimable cloud](#path-2--provisioning-a-claimable-cloud)**. One unauthenticated call returns credentials that work immediately, for a temporary cloud. The human **claims** it within 24 hours to convert it into a permanent free account; their email is optional up front. If it turns out they *did* already have an account, nothing fails until the claim — see [Step 3](#step-3--claim-ceremony-deferred), where they either claim with a different address or switch to Path 1 and let this cloud expire. When you can just ask, asking is cheaper than finding out there.
 
-> **Mapping to the reference protocol.** Path 1 is the protocol's interactive delegation, layered on standard OAuth discovery (RFC 9728 / RFC 8414). Path 2 is the protocol's `anonymous` identity type — you register with no user identity, operate under a restricted capability, and defer the claim ceremony until the user wants ownership. The protocol's third type, `identity_assertion` (ID-JAG) — a trusted provider minting a signed identity assertion so an agent can register headlessly — is **not supported**: Cloudinary has no inbound assertion-verification surface. A "Divergences from the reference protocol" note is at the [end](#divergences-from-the-reference-protocol).
+> **Mapping to the reference protocol.** Path 1 is the protocol's interactive delegation, layered on standard OAuth discovery (RFC 9728 / RFC 8414). Path 2 is the protocol's `anonymous` identity type — you register with no user identity, operate with restricted **reach** (full API capability, but delivery limited to declared IPs — see divergence 2), and defer the claim ceremony until the user wants ownership. The protocol's third type, `identity_assertion` (ID-JAG) — a trusted provider minting a signed identity assertion so an agent can register headlessly — is **not supported**: Cloudinary has no inbound assertion-verification surface. A "Divergences from the reference protocol" note is at the [end](#divergences-from-the-reference-protocol).
 
 ---
 
@@ -152,7 +152,9 @@ Content-Type: application/json
 > **Declare the IPs where the media will be *viewed*, not where you run.** This is the easiest thing to get wrong, and it fails quietly: uploads and transformations succeed from anywhere, so a mis-declared cloud looks healthy to you while every delivery URL is blocked at the CDN edge for the user.
 >
 > - **You run on the user's machine** (local CLI, desktop agent) → `"requester_ip"` is correct.
-> - **You run anywhere else** (CI job, cloud runtime, hosted agent) → `"requester_ip"` is **wrong**; it locks delivery to your server. Pass the viewer's public IP instead — ask the user for it, or ask them to open the claim URL first and work against a claimed cloud, which has no restriction at all.
+> - **You run anywhere else** (CI job, cloud runtime, hosted agent) → `"requester_ip"` is **wrong**; it locks delivery to your server. Ask the user for the public IP they'll view from and pass that.
+>
+> If you can't get a viewer IP, don't guess — you still have to send something valid, so send `"requester_ip"`, then surface `claim_url` immediately and wait for the claim before relying on delivery. Claiming removes the restriction entirely, which makes whatever you declared moot.
 
 Response (`200`):
 
